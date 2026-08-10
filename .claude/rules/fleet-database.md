@@ -20,6 +20,11 @@ paths:
 - Test pattern: `applyUpToPrev(t)` → set up data → `applyNext(t, db)` → verify
 - Create with: `make migration name=YourChangeName`
 
+## Migrations
+- Guard schema changes so a failed migration can be retried
+- `CREATE TABLE`/`DROP TABLE`: use `IF NOT EXISTS`/`IF EXISTS`
+- `ALTER TABLE`: use `columnExists`/`indexExistsTx`/etc from `migration.go`
+
 ## Query Building
 - Use `goqu` (github.com/doug-martin/goqu/v9) for SQL query building
 - Pattern: `dialect.From(goqu.I("table_name")).Select(...).Where(...)`
