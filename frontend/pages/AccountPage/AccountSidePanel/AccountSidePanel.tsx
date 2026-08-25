@@ -39,7 +39,7 @@ const AccountSidePanel = ({
   onChangePassword,
   onGetApiToken,
 }: IAccountSidePanelProps): JSX.Element => {
-  const { isPremiumTier, config } = useContext(AppContext);
+  const { isPremiumTier, hasPremiumLicense, config } = useContext(AppContext);
   const [versionData, setVersionData] = useState<IVersionResponse>();
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() =>
     getThemeMode()
@@ -182,7 +182,7 @@ const AccountSidePanel = ({
           )
         }
       />
-      {isPremiumTier && config && (
+      {hasPremiumLicense && config && (
         <DataSet
           title="License expiration date"
           value={readableDate(config.license.expiration)}

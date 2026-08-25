@@ -39,6 +39,7 @@ const MainContent = ({
   const {
     config,
     isPremiumTier,
+    hasPremiumLicense,
     isAndroidEnterpriseDeleted,
     isApplePnsExpired,
     isAppleBmExpired,
@@ -52,9 +53,9 @@ const MainContent = ({
   } = useContext(AppContext);
 
   const renderAppWideBanner = () => {
-    const isFleetLicenseExpired = hasLicenseExpired(
-      config?.license.expiration || ""
-    );
+    const isFleetLicenseExpired =
+      !!hasPremiumLicense &&
+      hasLicenseExpired(config?.license.expiration || "");
 
     let banner: JSX.Element | null = null;
 

@@ -157,6 +157,7 @@ type InitialStateType = {
   isSandboxMode?: boolean;
   isFreeTier?: boolean;
   isPremiumTier?: boolean;
+  hasPremiumLicense?: boolean;
   isMacMdmEnabledAndConfigured?: boolean;
   isWindowsMdmEnabledAndConfigured?: boolean;
   isAndroidMdmEnabledAndConfigured?: boolean;
@@ -233,6 +234,7 @@ export const initialState = {
   isSandboxMode: false,
   isFreeTier: undefined,
   isPremiumTier: undefined,
+  hasPremiumLicense: undefined,
   isMacMdmEnabledAndConfigured: undefined,
   isWindowsMdmEnabledAndConfigured: undefined,
   isAndroidMdmEnabledAndConfigured: undefined,
@@ -310,6 +312,7 @@ const setPermissions = (
     isSandboxMode: permissions.isSandboxMode(config),
     isFreeTier: permissions.isFreeTier(config),
     isPremiumTier: permissions.isPremiumTier(config),
+    hasPremiumLicense: permissions.hasPremiumLicense(config),
     isMacMdmEnabledAndConfigured: permissions.isMacMdmEnabledAndConfigured(
       config
     ),
@@ -619,6 +622,7 @@ const AppProvider = ({ children }: Props): JSX.Element => {
       isSandboxMode: state.isSandboxMode,
       isFreeTier: state.isFreeTier,
       isPremiumTier: state.isPremiumTier,
+      hasPremiumLicense: state.hasPremiumLicense,
       isMacMdmEnabledAndConfigured: state.isMacMdmEnabledAndConfigured,
       isWindowsMdmEnabledAndConfigured: state.isWindowsMdmEnabledAndConfigured,
       isAndroidMdmEnabledAndConfigured: state.isAndroidMdmEnabledAndConfigured,
@@ -694,6 +698,7 @@ const AppProvider = ({ children }: Props): JSX.Element => {
       state.isOnGlobalTeam,
       state.isOnlyObserver,
       state.isPremiumTier,
+      state.hasPremiumLicense,
       state.isSandboxMode,
       state.isTeamAdmin,
       state.isTeamTechnician,

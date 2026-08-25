@@ -19,6 +19,14 @@ export const isPremiumTier = (config: IConfig): boolean => {
   return config.license.tier === "premium" || hasEnterpriseFeatures(config);
 };
 
+/** Whether a Fleet Premium license is actually installed. Use this instead of
+ * isPremiumTier for license-specific UI — expiration warnings, renewal
+ * prompts — which would otherwise read the empty license of this build as an
+ * expired one. */
+export const hasPremiumLicense = (config: IConfig): boolean => {
+  return config.license.tier === "premium";
+};
+
 export const isFreeTier = (config: IConfig): boolean => {
   return !isPremiumTier(config);
 };
@@ -241,6 +249,7 @@ export default {
   isSandboxMode,
   isFreeTier,
   isPremiumTier,
+  hasPremiumLicense,
   isMacMdmEnabledAndConfigured,
   isWindowsMdmEnabledAndConfigured,
   isAndroidMdmEnabledAndConfigured,
