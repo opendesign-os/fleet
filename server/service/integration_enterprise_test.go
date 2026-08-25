@@ -147,7 +147,7 @@ func (s *integrationEnterpriseTestSuite) SetupSuite() {
 					}
 					calendarSchedule, err = cron.NewCalendarSchedule(
 						ctx, s.T().Name(), s.ds, redis_lock.NewLock(s.redisPool), config.CalendarConfig{Periodicity: 24 * time.Hour},
-						cronLog, &fleetmock.MockActivityService{},
+						nil, cronLog, &fleetmock.MockActivityService{},
 					)
 					return calendarSchedule, err
 				}

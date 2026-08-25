@@ -191,7 +191,7 @@ func TestEventForDifferentHost(t *testing.T) {
 	}
 
 	pool := redistest.SetupRedis(t, t.Name(), false, false, false)
-	err := cronCalendarEvents(ctx, ds, redis_lock.NewLock(pool), defaultCalendarConfig, logger, &mock.MockActivityService{})
+	err := cronCalendarEvents(ctx, ds, redis_lock.NewLock(pool), defaultCalendarConfig, nil, logger, &mock.MockActivityService{})
 	require.NoError(t, err)
 }
 
@@ -366,7 +366,7 @@ func TestCalendarEventsMultipleHosts(t *testing.T) {
 	}
 
 	pool := redistest.SetupRedis(t, t.Name(), false, false, false)
-	err := cronCalendarEvents(ctx, ds, redis_lock.NewLock(pool), defaultCalendarConfig, logger, &mock.MockActivityService{})
+	err := cronCalendarEvents(ctx, ds, redis_lock.NewLock(pool), defaultCalendarConfig, nil, logger, &mock.MockActivityService{})
 	require.NoError(t, err)
 
 	eventsMu.Lock()
@@ -657,7 +657,7 @@ func TestCalendarEvents1KHosts(t *testing.T) {
 
 	pool := redistest.SetupRedis(t, t.Name(), false, false, false)
 	distributedLock := redis_lock.NewLock(pool)
-	err := cronCalendarEvents(ctx, ds, distributedLock, defaultCalendarConfig, logger, &mock.MockActivityService{})
+	err := cronCalendarEvents(ctx, ds, distributedLock, defaultCalendarConfig, nil, logger, &mock.MockActivityService{})
 	require.NoError(t, err)
 
 	createdCalendarEvents := calendar.ListGoogleMockEvents()
@@ -705,7 +705,7 @@ func TestCalendarEvents1KHosts(t *testing.T) {
 		ev.EndTime = futureStart.Add(30 * time.Minute)
 	}
 
-	err = cronCalendarEvents(ctx, ds, distributedLock, defaultCalendarConfig, logger, &mock.MockActivityService{})
+	err = cronCalendarEvents(ctx, ds, distributedLock, defaultCalendarConfig, nil, logger, &mock.MockActivityService{})
 	require.NoError(t, err)
 
 	createdCalendarEvents = calendar.ListGoogleMockEvents()
@@ -955,7 +955,7 @@ func TestEventBody(t *testing.T) {
 	}
 
 	pool := redistest.SetupRedis(t, t.Name(), false, false, false)
-	err := cronCalendarEvents(ctx, ds, redis_lock.NewLock(pool), defaultCalendarConfig, logger, &mock.MockActivityService{})
+	err := cronCalendarEvents(ctx, ds, redis_lock.NewLock(pool), defaultCalendarConfig, nil, logger, &mock.MockActivityService{})
 	require.NoError(t, err)
 
 	numberOfEvents := 7

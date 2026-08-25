@@ -61,6 +61,10 @@ type appConfigResponseFields struct {
 	Partnerships   *fleet.Partnerships `json:"partnerships,omitempty"`
 	// Maximum software package size is loaded from the service.
 	MaxSoftwarePackageSize int64 `json:"max_software_package_size"`
+	// EnterpriseFeatures reports the enterprise features this build serves from the
+	// open-source core, independently of the license tier. The UI reads it to
+	// decide which enterprise surfaces to show.
+	EnterpriseFeatures fleet.EnterpriseFeatures `json:"enterprise_features"`
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface to make sure we serialize
@@ -240,6 +244,7 @@ func getAppConfigEndpoint(ctx context.Context, request interface{}, svc fleet.Se
 			SandboxEnabled:         svc.SandboxEnabled(),
 			Partnerships:           partnerships,
 			MaxSoftwarePackageSize: svc.MaxInstallerSizeBytes(),
+			EnterpriseFeatures:     fleet.CoreEnterpriseFeatures(),
 		},
 	}
 	return response, nil
@@ -355,6 +360,7 @@ func modifyAppConfigEndpoint(ctx context.Context, request interface{}, svc fleet
 			License:                lic,
 			Logging:                loggingConfig,
 			MaxSoftwarePackageSize: svc.MaxInstallerSizeBytes(),
+			EnterpriseFeatures:     fleet.CoreEnterpriseFeatures(),
 		},
 	}
 
@@ -2630,12 +2636,6 @@ func validateSSOSettings(p fleet.AppConfig, existing *fleet.AppConfig, invalid *
 			existingSSOProviderSettings = existing.SSOSettings.SSOProviderSettings
 		}
 		validateSSOProviderSettings(&p.SSOSettings.SSOProviderSettings, existingSSOProviderSettings, invalid, overwrite)
-
-		if !lic.IsPremium() {
-			if p.SSOSettings.EnableJITProvisioning {
-				invalid.Append("enable_jit_provisioning", ErrMissingLicense.Error())
-			}
-		}
 	}
 }
 
@@ -2945,15 +2945,10 @@ func encodePEMCertificate(buf io.Writer, cert *x509.Certificate) error {
 }
 
 func (svc *Service) HostFeatures(ctx context.Context, host *fleet.Host) (*fleet.Features, error) {
-	if svc.EnterpriseOverrides != nil {
+	if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.HostFeatures != nil {
 		return svc.EnterpriseOverrides.HostFeatures(ctx, host)
 	}
-
-	appConfig, err := svc.ds.AppConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &appConfig.Features, nil
+	return svc.hostFeatures(ctx, host)
 }
 
 // validateAddress validates that the provided address is usable for Fleet operations.

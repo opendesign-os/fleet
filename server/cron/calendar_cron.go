@@ -101,6 +101,7 @@ func NewCalendarSchedule(
 	ds fleet.Datastore,
 	distributedLock fleet.Lock,
 	serverConfig config.CalendarConfig,
+	mailer fleet.MailService,
 	logger *slog.Logger,
 	newActivitySvc activity_api.NewActivityService,
 ) (*schedule.Schedule, error) {
@@ -115,13 +116,13 @@ func NewCalendarSchedule(
 		schedule.WithJob(
 			"calendar_events_cleanup",
 			func(ctx context.Context) error {
-				return cronCalendarEventsCleanup(ctx, ds, logger)
+				return cronCalendarEventsCleanup(ctx, ds, mailer, logger)
 			},
 		),
 		schedule.WithJob(
 			"calendar_events",
 			func(ctx context.Context) error {
-				return cronCalendarEvents(ctx, ds, distributedLock, serverConfig, logger, newActivitySvc)
+				return cronCalendarEvents(ctx, ds, distributedLock, serverConfig, mailer, logger, newActivitySvc)
 			},
 		),
 	)
@@ -129,8 +130,18 @@ func NewCalendarSchedule(
 	return s, nil
 }
 
+// smtpSettings returns the mail configuration the email-invitation calendar
+// backend sends with. AppConfig leaves it nil when mail was never configured.
+func smtpSettings(appConfig *fleet.AppConfig) fleet.SMTPSettings {
+	if appConfig.SMTPSettings == nil {
+		return fleet.SMTPSettings{}
+	}
+	return *appConfig.SMTPSettings
+}
+
 func cronCalendarEvents(ctx context.Context, ds fleet.Datastore, distributedLock fleet.Lock, serverConfig config.CalendarConfig,
-	logger *slog.Logger, newActivitySvc activity_api.NewActivityService) error {
+	mailer fleet.MailService, logger *slog.Logger, newActivitySvc activity_api.NewActivityService,
+) error {
 	appConfig, err := ds.AppConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("load app config: %w", err)
@@ -157,6 +168,9 @@ func cronCalendarEvents(ctx context.Context, ds fleet.Datastore, distributedLock
 		CalendarConfig:            serverConfig,
 		GoogleCalendarIntegration: *googleCalendarIntegrationConfig,
 		ServerURL:                 appConfig.ServerSettings.ServerURL,
+		Mailer:                    mailer,
+		SMTPSettings:              smtpSettings(appConfig),
+		OrgName:                   appConfig.OrgInfo.OrgName,
 	}
 	for _, team := range teams {
 		if err := cronCalendarEventsForTeam(
@@ -835,7 +849,7 @@ func isHostOnline(ctx context.Context, ds fleet.Datastore, hostID uint) (bool, e
 	}
 }
 
-func cronCalendarEventsCleanup(ctx context.Context, ds fleet.Datastore, logger *slog.Logger) error {
+func cronCalendarEventsCleanup(ctx context.Context, ds fleet.Datastore, mailer fleet.MailService, logger *slog.Logger) error {
 	appConfig, err := ds.AppConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("load app config: %w", err)
@@ -847,6 +861,9 @@ func cronCalendarEventsCleanup(ctx context.Context, ds fleet.Datastore, logger *
 		calConfig = &calendar.Config{
 			GoogleCalendarIntegration: *appConfig.Integrations.GoogleCalendar[0],
 			ServerURL:                 appConfig.ServerSettings.ServerURL,
+			Mailer:                    mailer,
+			SMTPSettings:              smtpSettings(appConfig),
+			OrgName:                   appConfig.OrgInfo.OrgName,
 		}
 		userCalendar = calendar.CreateUserCalendarFromConfig(ctx, calConfig, logger)
 	}

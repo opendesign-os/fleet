@@ -213,13 +213,13 @@ func TestServiceSoftwareTitlesAuth(t *testing.T) {
 			})
 			checkAuthErr(t, tc.shouldFailTeamRead, err)
 
-			// List software for a team should fail no matter what
-			// with a non-premium context
+			// Fleet-scoped software is governed by authorization alone; the
+			// caller's license tier no longer changes the outcome.
 			if !tc.shouldFailTeamRead {
 				_, _, _, err = svc.ListSoftwareTitles(ctx, fleet.SoftwareTitleListOptions{
 					TeamID: ptr.Uint(1),
 				})
-				require.ErrorContains(t, err, "Requires Fleet Premium license")
+				require.NoError(t, err)
 			}
 
 			// Get a software title for a team

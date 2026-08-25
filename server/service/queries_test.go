@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewQueryLabelsIncludeAnyRequiresPremium(t *testing.T) {
+func TestNewQueryLabelsIncludeAny(t *testing.T) {
 	ds := new(mock.Store)
 	ds.AppConfigFunc = func(ctx context.Context) (*fleet.AppConfig, error) {
 		return &fleet.AppConfig{}, nil
@@ -40,12 +40,14 @@ func TestNewQueryLabelsIncludeAnyRequiresPremium(t *testing.T) {
 	}
 	viewerCtx := viewer.NewContext(ctx, viewer.Viewer{User: &testAdmin})
 
-	_, err := svc.NewQuery(viewerCtx, fleet.QueryPayload{
+	query, err := svc.NewQuery(viewerCtx, fleet.QueryPayload{
 		Name:             ptr.String("test query"),
 		Query:            ptr.String("select 1"),
 		LabelsIncludeAny: []string{"some-label"},
 	})
-	require.ErrorIs(t, err, fleet.ErrMissingLicense)
+	require.NoError(t, err)
+	require.True(t, ds.NewQueryFuncInvoked)
+	require.Len(t, query.LabelsIncludeAny, 1)
 }
 
 func TestQueryPayloadValidationCreate(t *testing.T) {
@@ -186,7 +188,7 @@ func TestQueryPayloadValidationCreate(t *testing.T) {
 	}
 }
 
-func TestModifyQueryLabelsScopeRequiresPremium(t *testing.T) {
+func TestModifyQueryLabelsScope(t *testing.T) {
 	ds := new(mock.Store)
 	ds.QueryFunc = func(ctx context.Context, id uint) (*fleet.Query, error) {
 		return &fleet.Query{ID: id, Name: "test query", Query: "select 1"}, nil
@@ -230,8 +232,10 @@ func TestModifyQueryLabelsScopeRequiresPremium(t *testing.T) {
 
 	for _, tC := range testCases {
 		t.Run(tC.name, func(t *testing.T) {
+			ds.SaveQueryFuncInvoked = false
 			_, err := svc.ModifyQuery(viewerCtx, 1, tC.payload)
-			require.ErrorIs(t, err, fleet.ErrMissingLicense)
+			require.NoError(t, err)
+			require.True(t, ds.SaveQueryFuncInvoked)
 		})
 	}
 }
@@ -260,12 +264,24 @@ func TestModifyQueryEmptyLabelSlicesNotPremium(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestApplyQuerySpecsLabelsIncludeAnyRequiresPremium(t *testing.T) {
+func TestApplyQuerySpecsLabelsIncludeAny(t *testing.T) {
 	ds := new(mock.Store)
 	ds.AppConfigFunc = func(ctx context.Context) (*fleet.AppConfig, error) {
 		return &fleet.AppConfig{}, nil
 	}
-	// The premium check happens before queryFromSpec, so no label/query DB mocks needed.
+	ds.QueryByNameFunc = func(ctx context.Context, teamID *uint, name string) (*fleet.Query, error) {
+		return nil, newNotFoundError()
+	}
+	ds.LabelsByNameFunc = func(ctx context.Context, names []string, filter fleet.TeamFilter) (map[string]*fleet.Label, error) {
+		labels := make(map[string]*fleet.Label, len(names))
+		for _, name := range names {
+			labels[name] = &fleet.Label{Name: name}
+		}
+		return labels, nil
+	}
+	ds.ApplyQueriesFunc = func(ctx context.Context, authorID uint, queries []*fleet.Query, queriesToDiscardResults map[uint]struct{}) error {
+		return nil
+	}
 	svc, ctx := newTestService(t, ds, nil, nil)
 
 	testAdmin := fleet.User{
@@ -282,7 +298,8 @@ func TestApplyQuerySpecsLabelsIncludeAnyRequiresPremium(t *testing.T) {
 			LabelsIncludeAny: []string{"some-label"},
 		},
 	})
-	require.ErrorIs(t, err, fleet.ErrMissingLicense)
+	require.NoError(t, err)
+	require.True(t, ds.ApplyQueriesFuncInvoked)
 }
 
 func TestApplyQuerySpecsEmptyLabelsNotPremium(t *testing.T) {

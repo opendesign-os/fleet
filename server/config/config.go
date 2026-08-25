@@ -921,6 +921,10 @@ func (c ConditionalAccessConfig) Validate(initFatal func(err error, msg string))
 type MicrosoftCompliancePartnerConfig struct {
 	// ProxyURI is the URI of the Microsoft Compliance Partner proxy (for development/testing).
 	ProxyURI string `yaml:"proxy_uri"`
+	// ExtensionAttribute selects which Entra device extension attribute (1-15)
+	// Fleet stamps its compliance verdict on when it publishes through Microsoft
+	// Graph. Conditional Access device filters read the same attribute.
+	ExtensionAttribute int `yaml:"extension_attribute"`
 }
 
 type MDMConfig struct {
@@ -1957,6 +1961,7 @@ func (man Manager) addConfigs() {
 
 	// Microsoft Compliance Partner
 	man.addConfigString("microsoft_compliance_partner.proxy_uri", "https://fleetdm.com", "URI of the Microsoft Compliance Partner proxy (for development/testing)")
+	man.addConfigInt("microsoft_compliance_partner.extension_attribute", 1, "Entra device extension attribute (1-15) Fleet stamps device compliance on when publishing via Microsoft Graph")
 
 	man.addConfigBool("partnerships.enable_primo", false, "Disables the ability to manage multiple fleets in an instance, even in premium tier")
 
@@ -2309,7 +2314,8 @@ func (man Manager) LoadConfig() FleetConfig {
 			EnablePrimo:       man.getConfigBool("partnerships.enable_primo"),
 		},
 		MicrosoftCompliancePartner: MicrosoftCompliancePartnerConfig{
-			ProxyURI: man.getConfigString("microsoft_compliance_partner.proxy_uri"),
+			ProxyURI:           man.getConfigString("microsoft_compliance_partner.proxy_uri"),
+			ExtensionAttribute: man.getConfigInt("microsoft_compliance_partner.extension_attribute"),
 		},
 		ConditionalAccess: ConditionalAccessConfig{
 			CertSerialFormat: man.getConfigString("conditional_access.cert_serial_format"),

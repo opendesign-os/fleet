@@ -63,14 +63,32 @@ type WindowsAutopilotDevice struct {
 	EntraDeviceID string `json:"azureActiveDirectoryDeviceId"`
 }
 
-// Client reads Windows Autopilot data from Microsoft Graph.
+// Client reads Windows Autopilot data from Microsoft Graph and publishes device
+// compliance state back to Entra.
 type Client interface {
 	// VerifyCredential mints a token and lists a single page to confirm the credential works.
 	VerifyCredential(ctx context.Context) error
 	// ListWindowsAutopilotDevices returns all Autopilot device identities for the credential's tenant, deduplicated by
 	// device ID.
 	ListWindowsAutopilotDevices(ctx context.Context) ([]WindowsAutopilotDevice, error)
+	// SetDeviceComplianceAttribute writes Fleet's compliance verdict for a device
+	// into one of the Entra device object's extension attributes. Conditional
+	// Access policies can filter on those attributes, which is how a Fleet
+	// policy failure ends up blocking sign-in.
+	SetDeviceComplianceAttribute(ctx context.Context, entraDeviceID string, attribute int, compliant bool) error
 }
+
+// Compliance attribute values. Conditional Access device filters compare
+// extension attributes as strings, so these are the literals an administrator
+// writes into the policy filter.
+const (
+	ComplianceValueCompliant    = "fleet-compliant"
+	ComplianceValueNonCompliant = "fleet-noncompliant"
+
+	// Entra defines extensionAttribute1 through extensionAttribute15.
+	minComplianceAttribute = 1
+	maxComplianceAttribute = 15
+)
 
 // ClientFactory builds a Client for a credential. It is injected so callers (notably the sync cron) do not import the
 // concrete client and tests can supply a fake, mirroring GoogleWorkspaceDirectoryFactory.
@@ -214,6 +232,59 @@ func (c *client) assertGraphOrigin(link string) error {
 type autopilotDevicesResponse struct {
 	Value    []WindowsAutopilotDevice `json:"value"`
 	NextLink string                   `json:"@odata.nextLink"`
+}
+
+// SetDeviceComplianceAttribute stamps the compliance verdict on the Entra
+// device object. The device is addressed by its Entra device ID rather than the
+// Graph object ID, since that is the identifier the agent reports.
+func (c *client) SetDeviceComplianceAttribute(ctx context.Context, entraDeviceID string, attribute int, compliant bool) error {
+	if strings.TrimSpace(entraDeviceID) == "" {
+		return ctxerr.New(ctx, "entra device id is required")
+	}
+	if attribute < minComplianceAttribute || attribute > maxComplianceAttribute {
+		return ctxerr.Errorf(ctx, "compliance attribute must be between %d and %d, got %d",
+			minComplianceAttribute, maxComplianceAttribute, attribute)
+	}
+
+	value := ComplianceValueNonCompliant
+	if compliant {
+		value = ComplianceValueCompliant
+	}
+	payload, err := json.Marshal(map[string]any{
+		"extensionAttributes": map[string]string{
+			fmt.Sprintf("extensionAttribute%d", attribute): value,
+		},
+	})
+	if err != nil {
+		return ctxerr.Wrap(ctx, err, "encode compliance attribute")
+	}
+
+	// The alternate-key form avoids a lookup round trip to translate the Entra
+	// device ID into the Graph object ID.
+	requestURL := fmt.Sprintf("%s/v1.0/devices(deviceId='%s')", c.graphHost, url.PathEscape(entraDeviceID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, requestURL, strings.NewReader(string(payload)))
+	if err != nil {
+		return ctxerr.Wrap(ctx, err, "build microsoft graph request")
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClientFor(ctx).Do(req)
+	if err != nil {
+		if retrieveErr, ok := errors.AsType[*oauth2.RetrieveError](err); ok {
+			return ctxerr.Wrap(ctx, newTokenError(retrieveErr), "acquire microsoft graph token")
+		}
+		return ctxerr.Wrap(ctx, err, "call microsoft graph")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes+1))
+		if readErr != nil {
+			return ctxerr.Wrap(ctx, readErr, "read microsoft graph error response")
+		}
+		return ctxerr.Wrap(ctx, newGraphError(resp, body), "set device compliance attribute")
+	}
+	return nil
 }
 
 // getPage performs one Graph GET and returns the devices plus the next link, if any.

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 
+	"github.com/fleetdm/fleet/v4/server/contexts/ctxerr"
 	"github.com/fleetdm/fleet/v4/server/fleet"
 	"github.com/fleetdm/fleet/v4/server/service/contract"
 )
@@ -18,7 +19,13 @@ func getScimDetailsEndpoint(ctx context.Context, _ interface{}, svc fleet.Servic
 }
 
 func (svc *Service) ScimDetails(ctx context.Context) (fleet.ScimDetails, error) {
-	// skipauth: No authorization check needed due to implementation returning only license error.
-	svc.authz.SkipAuthorization(ctx)
-	return fleet.ScimDetails{}, fleet.ErrMissingLicense
+	if err := svc.authz.Authorize(ctx, &fleet.ScimUser{}, fleet.ActionRead); err != nil {
+		return fleet.ScimDetails{}, err
+	}
+
+	request, err := svc.ds.ScimLastRequest(ctx)
+	if err != nil {
+		return fleet.ScimDetails{}, ctxerr.Wrap(ctx, err, "get last SCIM request")
+	}
+	return fleet.ScimDetails{LastRequest: request}, nil
 }

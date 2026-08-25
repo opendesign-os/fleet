@@ -26,6 +26,10 @@ type fakeGraphClient struct {
 
 func (f *fakeGraphClient) VerifyCredential(context.Context) error { return nil }
 
+func (f *fakeGraphClient) SetDeviceComplianceAttribute(context.Context, string, int, bool) error {
+	return nil
+}
+
 func (f *fakeGraphClient) ListWindowsAutopilotDevices(context.Context) ([]msgraph.WindowsAutopilotDevice, error) {
 	return f.devices, f.listErr
 }

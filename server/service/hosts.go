@@ -901,7 +901,7 @@ func (r getHostResponse) Error() error { return r.Err }
 func getHostEndpoint(ctx context.Context, request interface{}, svc fleet.Service) (fleet.Errorer, error) {
 	req := request.(*getHostRequest)
 	opts := fleet.HostDetailOptions{
-		IncludeCVEScores: false,
+		IncludeCVEScores: true,
 		IncludePolicies:  true, // intentionally true to preserve existing behavior,
 		ExcludeSoftware:  req.ExcludeSoftware,
 	}
@@ -1105,7 +1105,7 @@ func (r hostIDOnlyResponse) Error() error { return r.Err }
 func hostByIdentifierEndpoint(ctx context.Context, request interface{}, svc fleet.Service) (fleet.Errorer, error) {
 	req := request.(*hostByIdentifierRequest)
 	opts := fleet.HostDetailOptions{
-		IncludeCVEScores: false,
+		IncludeCVEScores: true,
 		IncludePolicies:  true, // intentionally true to preserve existing behavior
 		ExcludeSoftware:  req.ExcludeSoftware,
 	}
@@ -4459,16 +4459,6 @@ func (svc *Service) ListHostSoftware(ctx context.Context, hostID uint, opts flee
 			return nil, nil, ctxerr.Wrap(ctx, fleet.NewAuthRequiredError("internal error: missing host from request context"))
 		}
 		host = h
-	}
-
-	// Vulnerability severity filters (CVSS score, known exploit) are a Fleet Premium feature.
-	// This applies to both the user-authenticated host software endpoint and the
-	// device-authenticated "My device" software endpoint. The vulnerable=true requirement for
-	// these filters is enforced in the datastore.
-	if opts.MinimumCVSS > 0 || opts.MaximumCVSS > 0 || opts.KnownExploit {
-		if !license.IsPremium(ctx) {
-			return nil, nil, fleet.ErrMissingLicense
-		}
 	}
 
 	mdmEnrolled, err := svc.ds.IsHostConnectedToFleetMDM(ctx, host)

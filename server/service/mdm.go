@@ -2141,7 +2141,7 @@ func (svc *Service) resolveProfileTeam(ctx context.Context, teamID *uint) (uint,
 	if lic == nil || !lic.IsPremium() {
 		return 0, "", ctxerr.Wrap(ctx, fleet.ErrMissingLicense)
 	}
-	tm, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, &tmID, nil)
+	tm, err := svc.resolveTeam(ctx, &tmID, nil)
 	if err != nil {
 		return 0, "", ctxerr.Wrap(ctx, err)
 	}
@@ -2267,7 +2267,7 @@ func (svc *Service) parseAndValidateAndroidConfigProfile(ctx context.Context, te
 		if lic == nil || !lic.IsPremium() {
 			return nil, "", ctxerr.Wrap(ctx, fleet.ErrMissingLicense)
 		}
-		tm, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, &teamID, nil)
+		tm, err := svc.resolveTeam(ctx, &teamID, nil)
 		if err != nil {
 			return nil, "", ctxerr.Wrap(ctx, err)
 		}
@@ -3025,7 +3025,7 @@ func (svc *Service) authorizeBatchProfiles(ctx context.Context, tmID *uint, tmNa
 	// vice-versa, if the id is provided, load it to get the name (required for
 	// the activity).
 	if tmName != nil || tmID != nil {
-		tm, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, tmID, tmName)
+		tm, err := svc.resolveTeam(ctx, tmID, tmName)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -3523,7 +3523,7 @@ func (svc *Service) UpdateMDMDiskEncryption(ctx context.Context, teamID *uint, e
 	}
 
 	if teamID != nil {
-		tm, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, teamID, nil)
+		tm, err := svc.resolveTeam(ctx, teamID, nil)
 		if err != nil {
 			return err
 		}
@@ -3577,7 +3577,7 @@ func (svc *Service) UpdateMDMHostNameTemplate(ctx context.Context, fleetID *uint
 	}
 
 	if fleetID != nil && *fleetID > 0 {
-		tm, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, fleetID, nil)
+		tm, err := svc.resolveTeam(ctx, fleetID, nil)
 		if err != nil {
 			return err
 		}

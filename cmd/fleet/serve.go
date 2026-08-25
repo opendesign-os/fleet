@@ -26,7 +26,7 @@ import (
 	"github.com/e-dard/netbug"
 	"github.com/fleetdm/fleet/v4/cmd/fleetctl/fleetctl"
 	"github.com/fleetdm/fleet/v4/ee/server/licensing"
-	"github.com/fleetdm/fleet/v4/ee/server/scim"
+	"github.com/fleetdm/fleet/v4/server/scim"
 	eeservice "github.com/fleetdm/fleet/v4/ee/server/service"
 	"github.com/fleetdm/fleet/v4/ee/server/service/condaccess"
 	"github.com/fleetdm/fleet/v4/ee/server/service/digicert"
@@ -680,6 +680,7 @@ func runServeCmd(cmd *cobra.Command, configManager configpkg.Manager, debug, dev
 		chartSvc:               chartSvc,
 		auditLogger:            auditLogger,
 		distributedLock:        distributedLock,
+		mailService:            mailService,
 		initFatal:              initFatal,
 	})
 
@@ -909,13 +910,14 @@ func runServeCmd(cmd *cobra.Command, configManager configpkg.Manager, debug, dev
 		}
 	}
 
+	if err = scim.RegisterSCIM(rootMux, ds, svc, logger, &config); err != nil {
+		initFatal(err, "setup SCIM")
+	}
+
 	if license.IsPremium() {
 		// SCEP proxy (for NDES, etc.)
 		if err = service.RegisterSCEPProxy(rootMux, ds, logger, nil, &config); err != nil {
 			initFatal(err, "setup SCEP proxy")
-		}
-		if err = scim.RegisterSCIM(rootMux, ds, svc, logger, &config); err != nil {
-			initFatal(err, "setup SCIM")
 		}
 		// Host identify and conditional access SCEP feature only works if a private key has been set up
 		if len(config.Server.PrivateKey) > 0 {

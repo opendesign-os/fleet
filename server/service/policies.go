@@ -89,13 +89,11 @@ func (svc Service) ResetPolicy(ctx context.Context, policyID uint) error {
 	default:
 		id := int64(*policy.TeamID) //nolint:gosec // policy team IDs are small
 		activityTeamID = &id
-		if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.TeamByIDOrName != nil {
-			team, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, policy.TeamID, nil)
-			if err != nil {
-				return ctxerr.Wrap(ctx, err, "fetching team details")
-			}
-			teamName = &team.Name
+		team, err := svc.resolveTeam(ctx, policy.TeamID, nil)
+		if err != nil {
+			return ctxerr.Wrap(ctx, err, "fetching fleet details")
 		}
+		teamName = &team.Name
 	}
 
 	if err := svc.NewActivity(ctx, authz.UserFromContext(ctx), fleet.ActivityTypeResetPolicy{

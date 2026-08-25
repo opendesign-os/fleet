@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fleetdm/fleet/v4/ee/server/calendar"
+	fleetcalendar "github.com/fleetdm/fleet/v4/server/calendar"
 	"github.com/fleetdm/fleet/v4/server/config"
 	"github.com/fleetdm/fleet/v4/server/fleet"
 )
@@ -47,6 +48,12 @@ type Config struct {
 	config.CalendarConfig
 	fleet.GoogleCalendarIntegration
 	ServerURL string
+
+	// Mailer, SMTPSettings and OrgName are used by the email-invitation backend,
+	// which runs when the Google Calendar integration carries no API key.
+	Mailer       fleet.MailService
+	SMTPSettings fleet.SMTPSettings
+	OrgName      string
 }
 
 // PolicyLiteWithMeta is a wrapper around fleet.PolicyLite that includes a tag for policy's description/resolution.
@@ -63,7 +70,22 @@ func ClassifyRemoteError(err error) (isRemote bool, statusCode int, body string)
 	return calendar.RemoteError(err)
 }
 
+// CreateUserCalendarFromConfig picks the backend the maintenance window is
+// scheduled on. An integration configured without an API key can't talk to the
+// Google Calendar API, so it falls back to emailing the user an iCalendar
+// invitation, which any calendar client accepts.
 func CreateUserCalendarFromConfig(ctx context.Context, config *Config, logger *slog.Logger) fleet.UserCalendar {
+	if config.GoogleCalendarIntegration.ApiKey.IsEmpty() {
+		return fleetcalendar.NewICSCalendar(fleetcalendar.ICSConfig{
+			Mailer:         config.Mailer,
+			SMTPSettings:   config.SMTPSettings,
+			OrganizerEmail: config.SMTPSettings.SMTPSenderAddress,
+			OrgName:        config.OrgName,
+			ServerURL:      config.ServerURL,
+			Logger:         logger.With("component", "ics_calendar"),
+		})
+	}
+
 	googleCalendarConfig := calendar.GoogleCalendarConfig{
 		Context:           ctx,
 		IntegrationConfig: &config.GoogleCalendarIntegration,

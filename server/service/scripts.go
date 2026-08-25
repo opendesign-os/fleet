@@ -119,14 +119,6 @@ func (svc *Service) RunHostScript(ctx context.Context, request *fleet.HostScript
 		return nil, err
 	}
 
-	if request.TeamID > 0 {
-		lic, _ := license.FromContext(ctx)
-		if !lic.IsPremium() {
-			svc.authz.SkipAuthorization(ctx)
-			return nil, fleet.ErrMissingLicense
-		}
-	}
-
 	if request.ScriptContents != "" {
 		if err := fleet.ValidateEmbeddedSecretsAndCustomHostVitals(ctx, svc.ds, []string{request.ScriptContents}); err != nil {
 			svc.authz.SkipAuthorization(ctx)
@@ -442,7 +434,7 @@ func (svc *Service) NewScript(ctx context.Context, teamID *uint, name string, r 
 
 	var teamName *string
 	if teamID != nil && *teamID != 0 {
-		tm, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, teamID, nil)
+		tm, err := svc.resolveTeam(ctx, teamID, nil)
 		if err != nil {
 			return nil, ctxerr.Wrap(ctx, err, "get team name for create script activity")
 		}
@@ -489,7 +481,7 @@ func (svc *Service) DeleteScript(ctx context.Context, scriptID uint) error {
 
 	var teamName *string
 	if script.TeamID != nil && *script.TeamID != 0 {
-		tm, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, script.TeamID, nil)
+		tm, err := svc.resolveTeam(ctx, script.TeamID, nil)
 		if err != nil {
 			return ctxerr.Wrap(ctx, err, "get team name for delete script activity")
 		}
@@ -641,7 +633,7 @@ func (svc *Service) UpdateScript(ctx context.Context, scriptID uint, r io.Reader
 
 	var teamName *string
 	if script.TeamID != nil && *script.TeamID != 0 {
-		tm, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, script.TeamID, nil)
+		tm, err := svc.resolveTeam(ctx, script.TeamID, nil)
 		if err != nil {
 			return nil, ctxerr.Wrap(ctx, err, "get team name for create script activity")
 		}
@@ -732,7 +724,7 @@ func (svc *Service) BatchSetScripts(ctx context.Context, maybeTmID *uint, maybeT
 	var teamName *string
 
 	if maybeTmID != nil || maybeTmName != nil {
-		team, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, maybeTmID, maybeTmName)
+		team, err := svc.resolveTeam(ctx, maybeTmID, maybeTmName)
 		if err != nil {
 			// If this is a dry run, the team may not have been created yet
 			if dryRun && fleet.IsNotFound(err) {

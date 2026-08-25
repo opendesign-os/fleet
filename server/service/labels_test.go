@@ -13,7 +13,6 @@ import (
 	activity_api "github.com/fleetdm/fleet/v4/server/activity/api"
 	authz_ctx "github.com/fleetdm/fleet/v4/server/contexts/authz"
 	"github.com/fleetdm/fleet/v4/server/contexts/ctxerr"
-	"github.com/fleetdm/fleet/v4/server/contexts/license"
 	"github.com/fleetdm/fleet/v4/server/contexts/viewer"
 	"github.com/fleetdm/fleet/v4/server/datastore/mysql"
 	"github.com/fleetdm/fleet/v4/server/datastore/mysql/mysqltest"
@@ -294,27 +293,24 @@ func TestLabelsAuth(t *testing.T) {
 			} {
 				t.Run(tc.label.Name, func(t *testing.T) {
 					ctx2 := ctx
+					// Fleet-scoped labels are governed by authorization alone; the
+					// caller's license tier no longer changes the outcome.
 					if tc.label.TeamID != nil {
-						// license check is after auth check
 						if !tc.shouldFailRead {
 							_, err = svc.GetLabelSpecs(ctx2, tc.label.TeamID)
-							require.ErrorIs(t, err, fleet.ErrMissingLicense)
+							require.NoError(t, err)
 
 							_, err = svc.ListLabels(ctx2, fleet.ListOptions{}, tc.label.TeamID, true)
-							require.ErrorIs(t, err, fleet.ErrMissingLicense)
+							require.NoError(t, err)
 
 							_, err = svc.LabelsSummary(ctx2, tc.label.TeamID)
-							require.ErrorIs(t, err, fleet.ErrMissingLicense)
+							require.NoError(t, err)
 						}
 						if !tc.shouldFailWrite {
-							require.ErrorIs(t, svc.ApplyLabelSpecs(ctx2, []*fleet.LabelSpec{}, tc.label.TeamID, nil), fleet.ErrMissingLicense)
-
-							// We'll let global admins clean up team labels if they downgraded to Free
+							require.NoError(t, svc.ApplyLabelSpecs(ctx2, []*fleet.LabelSpec{}, tc.label.TeamID, nil))
 							require.NoError(t, svc.DeleteLabel(ctx2, tc.label.Name))
 							require.NoError(t, svc.DeleteLabelByID(ctx2, tc.label.ID))
 						}
-
-						ctx2 = license.NewContext(ctx2, &fleet.LicenseInfo{Tier: fleet.TierPremium})
 					}
 
 					err = svc.ApplyLabelSpecs(ctx2, []*fleet.LabelSpec{}, tc.label.TeamID, nil)

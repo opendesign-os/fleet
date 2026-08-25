@@ -601,6 +601,12 @@ func ValidateGoogleCalendarIntegrations(intgs []*GoogleCalendarIntegration, inva
 		invalid.Append("integrations.google_calendar", "integrating with >1 Google Workspace service account is not yet supported.")
 	}
 	for _, intg := range intgs {
+		// An integration with no API key schedules maintenance windows by
+		// emailing iCalendar invitations instead of calling the Google Calendar
+		// API, so there are no service-account credentials to validate.
+		if intg.ApiKey.IsEmpty() {
+			continue
+		}
 		if email, ok := intg.ApiKey.Values[GoogleCalendarEmail]; !ok {
 			invalid.Append(
 				fmt.Sprintf("integrations.google_calendar.api_key_json.%s", GoogleCalendarEmail),

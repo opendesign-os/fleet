@@ -8,7 +8,6 @@ import (
 
 	"github.com/fleetdm/fleet/v4/server/authz"
 	"github.com/fleetdm/fleet/v4/server/contexts/ctxerr"
-	"github.com/fleetdm/fleet/v4/server/contexts/license"
 	"github.com/fleetdm/fleet/v4/server/contexts/logging"
 	"github.com/fleetdm/fleet/v4/server/contexts/viewer"
 	"github.com/fleetdm/fleet/v4/server/fleet"
@@ -252,11 +251,6 @@ func (svc *Service) NewQuery(ctx context.Context, p fleet.QueryPayload) (*fleet.
 		p.Logging = ptr.String(fleet.LoggingSnapshot)
 	}
 
-	// Targeting queries by label is a premium feature only.
-	if (len(p.LabelsIncludeAny) > 0 || len(p.LabelsIncludeAll) > 0) && !license.IsPremium(ctx) {
-		return nil, fleet.ErrMissingLicense
-	}
-
 	if err := p.Verify(); err != nil {
 		return nil, ctxerr.Wrap(ctx, &fleet.BadRequestError{
 			Message: fmt.Sprintf("query payload verification: %s", err),
@@ -324,13 +318,11 @@ func (svc *Service) NewQuery(ctx context.Context, p fleet.QueryPayload) (*fleet.
 	var teamName *string
 	if query.TeamID != nil {
 		teamID = int64(*query.TeamID) //nolint:gosec // dismiss G115
-		if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.TeamByIDOrName != nil {
-			team, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, query.TeamID, nil)
-			if err != nil {
-				return nil, err
-			}
-			teamName = &team.Name
+		team, err := svc.resolveTeam(ctx, query.TeamID, nil)
+		if err != nil {
+			return nil, err
 		}
+		teamName = &team.Name
 	} else {
 		teamID = -1 // Use -1 for global queries
 		teamName = nil
@@ -385,11 +377,6 @@ func (svc *Service) modifyLoadedQuery(ctx context.Context, query *fleet.Query, p
 
 	if p.Logging != nil && *p.Logging == "" {
 		p.Logging = ptr.String(fleet.LoggingSnapshot)
-	}
-
-	// Targeting queries by label is a premium feature only.
-	if (len(p.LabelsIncludeAny) > 0 || len(p.LabelsIncludeAll) > 0) && !license.IsPremium(ctx) {
-		return nil, fleet.ErrMissingLicense
 	}
 
 	if err := p.Verify(); err != nil {
@@ -480,13 +467,11 @@ func (svc *Service) modifyLoadedQuery(ctx context.Context, query *fleet.Query, p
 	var teamName *string
 	if query.TeamID != nil {
 		teamID = int64(*query.TeamID) //nolint:gosec // dismiss G115
-		if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.TeamByIDOrName != nil {
-			team, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, query.TeamID, nil)
-			if err != nil {
-				return nil, err
-			}
-			teamName = &team.Name
+		team, err := svc.resolveTeam(ctx, query.TeamID, nil)
+		if err != nil {
+			return nil, err
 		}
+		teamName = &team.Name
 	} else {
 		teamID = -1
 		teamName = nil
@@ -566,13 +551,12 @@ func (svc *Service) DeleteQuery(ctx context.Context, teamID *uint, name string) 
 	var teamName *string
 	if query.TeamID != nil {
 		logTeamID = int64(*query.TeamID) //nolint:gosec // dismiss G115
-		if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.TeamByIDOrName != nil {
-			team, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, query.TeamID, nil)
+			team, err := svc.resolveTeam(ctx, query.TeamID, nil)
 			if err != nil {
 				return err
 			}
 			teamName = &team.Name
-		}
+
 	} else {
 		logTeamID = -1
 		teamName = nil
@@ -641,13 +625,12 @@ func (svc *Service) deleteLoadedQuery(ctx context.Context, query *fleet.Query) e
 	var teamName *string
 	if query.TeamID != nil {
 		logTeamID = int64(*query.TeamID) //nolint:gosec // dismiss G115
-		if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.TeamByIDOrName != nil {
-			team, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, query.TeamID, nil)
+			team, err := svc.resolveTeam(ctx, query.TeamID, nil)
 			if err != nil {
 				return err
 			}
 			teamName = &team.Name
-		}
+
 	} else {
 		logTeamID = -1
 		teamName = nil
@@ -698,13 +681,12 @@ func (svc *Service) DeleteQueries(ctx context.Context, ids []uint) (uint, error)
 		// Capture team information for activity logging.
 		if query.TeamID != nil {
 			logTeamID = int64(*query.TeamID) //nolint:gosec // dismiss G115
-			if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.TeamByIDOrName != nil {
-				team, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, query.TeamID, nil)
+				team, err := svc.resolveTeam(ctx, query.TeamID, nil)
 				if err != nil {
 					return 0, err
 				}
 				teamName = &team.Name
-			}
+
 		}
 	}
 
@@ -753,9 +735,8 @@ func applyQuerySpecsEndpoint(ctx context.Context, request interface{}, svc fleet
 }
 
 func (svc *Service) ApplyQuerySpecs(ctx context.Context, specs []*fleet.QuerySpec) error {
-	// 1. Validate each spec (nil, premium label scoping, payload verification)
-	// and turn it into a query. Fail-fast on the first invalid spec.
-	isPremium := license.IsPremium(ctx)
+	// 1. Validate each spec (nil, payload verification) and turn it into a
+	// query. Fail-fast on the first invalid spec.
 	queries := make([]*fleet.Query, 0, len(specs))
 	for _, spec := range specs {
 		if spec == nil {
@@ -763,10 +744,6 @@ func (svc *Service) ApplyQuerySpecs(ctx context.Context, specs []*fleet.QuerySpe
 			return ctxerr.Wrap(ctx, &fleet.BadRequestError{
 				Message: "invalid query spec: nil",
 			})
-		}
-		if !isPremium && (len(spec.LabelsIncludeAny) > 0 || len(spec.LabelsIncludeAll) > 0) {
-			setAuthCheckedOnPreAuthErr(ctx)
-			return fleet.ErrMissingLicense
 		}
 		if err := spec.Verify(); err != nil {
 			setAuthCheckedOnPreAuthErr(ctx)

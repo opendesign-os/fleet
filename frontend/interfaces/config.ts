@@ -19,6 +19,17 @@ export interface ILicense {
   allow_disable_telemetry: boolean;
 }
 
+/** Enterprise features this server implements in the open-source core, served
+ * regardless of the license tier. Absent fields are still license-gated. */
+export interface IEnterpriseFeatures {
+  fleets: boolean;
+  vulnerability_scores: boolean;
+  critical_policies: boolean;
+  scim: boolean;
+  maintenance_windows: boolean;
+  conditional_access: boolean;
+}
+
 export interface IEndUserAuthentication {
   entity_id: string;
   idp_name: string;
@@ -237,6 +248,7 @@ export interface IConfig {
     osquery_policy: number;
   };
   license: ILicense;
+  enterprise_features?: IEnterpriseFeatures;
   fleet_desktop: IFleetDesktopSettings;
   vulnerabilities: {
     databases_path: string;

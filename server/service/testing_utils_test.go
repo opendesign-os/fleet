@@ -108,6 +108,27 @@ func newTestServiceWithConfig(t *testing.T, ds fleet.Datastore, fleetConfig conf
 				return &fleet.ConditionalAccessMicrosoftIntegration{}, nil
 			}
 		}
+		// Activity details and MDM scoping resolve fleet names through
+		// EnterpriseOverrides.TeamByIDOrName, which the core service now wires up
+		// unconditionally. Default to a bare fleet so tests that don't care about
+		// fleet names don't panic on a nil mock.
+		if mockDS.TeamWithExtrasFunc == nil {
+			mockDS.TeamWithExtrasFunc = func(ctx context.Context, tid uint) (*fleet.Team, error) {
+				return &fleet.Team{ID: tid}, nil
+			}
+		}
+		// A host's detail queries come from its fleet's features. Default to the
+		// global config so tests that don't configure per-fleet features behave as
+		// they did when features were global-only.
+		if mockDS.TeamFeaturesFunc == nil {
+			mockDS.TeamFeaturesFunc = func(ctx context.Context, teamID uint) (*fleet.Features, error) {
+				appConfig, err := mockDS.AppConfig(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return &appConfig.Features, nil
+			}
+		}
 		// Config reads hydrate the Windows enrollment default fleet from its config row.
 		if mockDS.GetWindowsEnrollmentDefaultFleetFunc == nil {
 			mockDS.GetWindowsEnrollmentDefaultFleetFunc = func(ctx context.Context) (*uint, string, error) {
@@ -1575,6 +1596,10 @@ func errOnly(_ []uint, err error) error { return err }
 type noopGraphClient struct{}
 
 func (noopGraphClient) VerifyCredential(context.Context) error { return nil }
+
+func (noopGraphClient) SetDeviceComplianceAttribute(context.Context, string, int, bool) error {
+	return nil
+}
 
 func (noopGraphClient) ListWindowsAutopilotDevices(context.Context) ([]msgraph.WindowsAutopilotDevice, error) {
 	return nil, nil
