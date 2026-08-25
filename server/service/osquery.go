@@ -28,6 +28,7 @@ import (
 	"github.com/fleetdm/fleet/v4/server/contexts/license"
 	"github.com/fleetdm/fleet/v4/server/contexts/logging"
 	"github.com/fleetdm/fleet/v4/server/fleet"
+	"github.com/fleetdm/fleet/v4/server/microsoft/msgraph"
 	"github.com/fleetdm/fleet/v4/server/ptr"
 	"github.com/fleetdm/fleet/v4/server/pubsub"
 	"github.com/fleetdm/fleet/v4/server/service/conditional_access_microsoft_proxy"
@@ -2735,22 +2736,14 @@ func (svc *Service) processScriptsForNewlyFailingPolicies(
 }
 
 func (svc *Service) conditionalAccessConfiguredAndEnabledForTeam(ctx context.Context, hostTeamID *uint) (configured bool, enabledForTeam bool, err error) {
-	// Conditional access is a Fleet Premium feature. Gate on the current license
-	// tier so that an integration left over from a previous Premium license
-	// (e.g. after a downgrade or expiry) doesn't keep the feature active.
-	if !license.IsPremium(ctx) {
-		return false, false, nil
-	}
-
-	// Check if the integration is fully configured.
-	integration, err := svc.ds.ConditionalAccessMicrosoftGet(ctx)
+	// Compliance reaches Entra either through the compliance-partner integration
+	// or, when that is not set up, through a Microsoft Graph app registration
+	// that stamps the verdict on the device object.
+	setUp, err := svc.conditionalAccessDeliveryConfigured(ctx)
 	if err != nil {
-		if fleet.IsNotFound(err) {
-			return false, false, nil
-		}
-		return false, false, ctxerr.Wrap(ctx, err, "failed to load the integration")
+		return false, false, err
 	}
-	if !integration.SetupDone {
+	if !setUp {
 		return false, false, nil
 	}
 
@@ -2777,6 +2770,68 @@ func (svc *Service) conditionalAccessConfiguredAndEnabledForTeam(ctx context.Con
 		teamConditionalAccessEnabled = team.Config.Integrations.ConditionalAccessEnabled.Value
 	}
 	return true, teamConditionalAccessEnabled, nil
+}
+
+// setHostComplianceViaGraph stamps Fleet's verdict on the Entra device object
+// using a Microsoft Graph app registration. Conditional Access policies filter
+// on the same extension attribute, so a failing Fleet policy blocks sign-in
+// without Fleet having to be a registered compliance partner.
+func (svc *Service) setHostComplianceViaGraph(
+	ctx context.Context,
+	status *fleet.HostConditionalAccessStatus,
+	compliant bool,
+) error {
+	cred, err := svc.microsoftGraphCredential(ctx)
+	if err != nil {
+		return err
+	}
+	if cred == nil {
+		return ctxerr.New(ctx, "no microsoft graph credential configured")
+	}
+
+	client, err := msgraph.NewClient(cred)
+	if err != nil {
+		return ctxerr.Wrap(ctx, err, "build microsoft graph client")
+	}
+
+	attribute := svc.config.MicrosoftCompliancePartner.ExtensionAttribute
+	if attribute == 0 {
+		attribute = 1
+	}
+	return client.SetDeviceComplianceAttribute(ctx, status.DeviceID, attribute, compliant)
+}
+
+// conditionalAccessDeliveryConfigured reports whether Fleet has a way to
+// publish a compliance verdict to Entra.
+func (svc *Service) conditionalAccessDeliveryConfigured(ctx context.Context) (bool, error) {
+	integration, err := svc.ds.ConditionalAccessMicrosoftGet(ctx)
+	switch {
+	case err == nil && integration.SetupDone:
+		return true, nil
+	case err != nil && !fleet.IsNotFound(err):
+		return false, ctxerr.Wrap(ctx, err, "failed to load the integration")
+	}
+
+	cred, err := svc.microsoftGraphCredential(ctx)
+	if err != nil {
+		return false, err
+	}
+	return cred != nil, nil
+}
+
+// microsoftGraphCredential returns the first usable Graph credential, or nil
+// when none is configured.
+func (svc *Service) microsoftGraphCredential(ctx context.Context) (*fleet.MicrosoftGraphCredential, error) {
+	creds, err := svc.ds.ListMicrosoftGraphCredentials(ctx)
+	if err != nil {
+		return nil, ctxerr.Wrap(ctx, err, "list microsoft graph credentials")
+	}
+	for _, cred := range creds {
+		if cred != nil && cred.Configured() {
+			return cred, nil
+		}
+	}
+	return nil, nil
 }
 
 func (svc *Service) processConditionalAccessForNewlyFailingPolicies(
@@ -2903,10 +2958,6 @@ func (svc *Service) setHostConditionalAccess(
 ) error {
 	ctx := context.Background()
 
-	integration, err := svc.ds.ConditionalAccessMicrosoftGet(ctx)
-	if err != nil {
-		return ctxerr.Wrap(ctx, err, "get integration")
-	}
 	logger := svc.logger.With(
 		"host_id", hostID,
 		"platform", hostPlatform,
@@ -2914,6 +2965,18 @@ func (svc *Service) setHostConditionalAccess(
 		"compliant", compliant,
 	)
 	logger.DebugContext(ctx, "set compliance status")
+
+	integration, err := svc.ds.ConditionalAccessMicrosoftGet(ctx)
+	if err != nil && !fleet.IsNotFound(err) {
+		return ctxerr.Wrap(ctx, err, "get integration")
+	}
+	if integration == nil || !integration.SetupDone {
+		if err := svc.setHostComplianceViaGraph(ctx, hostConditionalAccessStatus, compliant); err != nil {
+			recordConditionalAccessFailureActivity(ctx, svc.activitySvc, hostID, failingPolicyIDs, err, logger)
+			return ctxerr.Wrap(ctx, err, "failed to set compliance attribute")
+		}
+		return svc.ds.SetHostConditionalAccessStatus(ctx, hostID, managed, compliant)
+	}
 
 	// Currently, only macOS and Windows are supported.
 	osName := "macOS" // "macOS" is what Entra requires for darwin hosts.

@@ -1278,6 +1278,7 @@ func TestHostDetailQueries(t *testing.T) {
 			EnableSoftwareInventory: true,
 		}}, nil
 	}
+	stubUnconfiguredConditionalAccess(ds)
 
 	mockClock := clock.NewMockClock()
 	host := fleet.Host{
@@ -1397,6 +1398,7 @@ func TestHostDetailQueriesTeamBitLockerPIN(t *testing.T) {
 	ds.TeamFeaturesFunc = func(ctx context.Context, teamID uint) (*fleet.Features, error) {
 		return &fleet.Features{}, nil
 	}
+	stubUnconfiguredConditionalAccess(ds)
 
 	host := fleet.Host{
 		ID:               1,
@@ -2411,6 +2413,7 @@ func TestDetailQueries(t *testing.T) {
 
 func TestMDMQueries(t *testing.T) {
 	ds := new(mock.Store)
+	stubUnconfiguredConditionalAccess(ds)
 	svc := &Service{
 		clock:    clock.NewMockClock(),
 		logger:   slog.New(slog.DiscardHandler),
@@ -5709,4 +5712,16 @@ func TestProcessSoftwareForNewlyFailingPoliciesSuppressedDuringSetupExperience(t
 		require.NoError(t, svcImpl.processSoftwareForNewlyFailingPolicies(ctx, hostID, nil, "windows", &orbitKey, "setup-host-uuid", failing, newlyFailing))
 		require.True(t, insertCalled, "outside setup experience the policy automation installs normally")
 	})
+}
+
+// stubUnconfiguredConditionalAccess wires the two reads that decide whether
+// Fleet can publish a compliance verdict to Entra, so tests building a bare
+// Service don't have to care about the feature.
+func stubUnconfiguredConditionalAccess(ds *mock.Store) {
+	ds.ConditionalAccessMicrosoftGetFunc = func(ctx context.Context) (*fleet.ConditionalAccessMicrosoftIntegration, error) {
+		return &fleet.ConditionalAccessMicrosoftIntegration{}, nil
+	}
+	ds.ListMicrosoftGraphCredentialsFunc = func(ctx context.Context) ([]*fleet.MicrosoftGraphCredential, error) {
+		return nil, nil
+	}
 }

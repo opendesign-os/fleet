@@ -305,6 +305,10 @@ func (noopMicrosoftGraphClient) ListWindowsAutopilotDevices(context.Context) ([]
 	return nil, nil
 }
 
+func (noopMicrosoftGraphClient) SetDeviceComplianceAttribute(context.Context, string, int, bool) error {
+	return nil
+}
+
 func noopMicrosoftGraphClientFactory(*fleet.MicrosoftGraphCredential) (msgraph.Client, error) {
 	return noopMicrosoftGraphClient{}, nil
 }

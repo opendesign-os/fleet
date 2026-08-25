@@ -53,6 +53,7 @@ type cronSchedulesDeps struct {
 	chartSvc               chart_api.Service
 	auditLogger            fleet.JSONLogger
 	distributedLock        fleet.Lock
+	mailService            fleet.MailService
 	initFatal              func(err error, msg string)
 }
 
@@ -160,6 +161,15 @@ func registerCleanupAndMaintenanceCrons(ctx context.Context, deps cronSchedulesD
 
 	deps.register("failed to register batch activities schedule", func() (fleet.CronSchedule, error) {
 		return newBatchActivitiesSchedule(ctx, deps.instanceID, deps.ds, deps.logger)
+	})
+
+	deps.register("failed to register calendar schedule", func() (fleet.CronSchedule, error) {
+		if deps.config.Calendar.Periodicity > 0 {
+			deps.config.Calendar.SetAlwaysReloadEvent(true)
+		} else {
+			deps.config.Calendar.Periodicity = 5 * time.Minute
+		}
+		return cron.NewCalendarSchedule(ctx, deps.instanceID, deps.ds, deps.distributedLock, deps.config.Calendar, deps.mailService, deps.logger, deps.activitySvc)
 	})
 }
 
@@ -366,15 +376,6 @@ func registerPremiumCrons(ctx context.Context, deps cronSchedulesDeps) {
 			return newActivitiesStreamingSchedule(ctx, deps.instanceID, deps.activitySvc, deps.ds, deps.logger, deps.auditLogger)
 		})
 	}
-
-	deps.register("failed to register calendar schedule", func() (fleet.CronSchedule, error) {
-		if deps.config.Calendar.Periodicity > 0 {
-			deps.config.Calendar.SetAlwaysReloadEvent(true)
-		} else {
-			deps.config.Calendar.Periodicity = 5 * time.Minute
-		}
-		return cron.NewCalendarSchedule(ctx, deps.instanceID, deps.ds, deps.distributedLock, deps.config.Calendar, deps.logger, deps.activitySvc)
-	})
 
 	deps.register("failed to register google workspace sync schedule", func() (fleet.CronSchedule, error) {
 		factory := googleworkspace.NewDirectoryFactory(googleworkspace.Limits{

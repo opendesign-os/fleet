@@ -1591,6 +1591,10 @@ type noopGraphClient struct{}
 
 func (noopGraphClient) VerifyCredential(context.Context) error { return nil }
 
+func (noopGraphClient) SetDeviceComplianceAttribute(context.Context, string, int, bool) error {
+	return nil
+}
+
 func (noopGraphClient) ListWindowsAutopilotDevices(context.Context) ([]msgraph.WindowsAutopilotDevice, error) {
 	return nil, nil
 }

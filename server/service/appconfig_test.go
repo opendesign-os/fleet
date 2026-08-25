@@ -658,21 +658,20 @@ func TestJITProvisioning(t *testing.T) {
 		},
 	}
 
-	t.Run("doesn't allow to enable JIT provisioning without a premium license", func(t *testing.T) {
-		invalid := &fleet.InvalidArgumentError{}
-		validateSSOSettings(config, &fleet.AppConfig{}, invalid, &fleet.LicenseInfo{}, false)
-		require.True(t, invalid.HasErrors())
-		assert.Contains(t, invalid.Error(), "enable_jit_provisioning")
-		assert.Contains(t, invalid.Error(), "missing or invalid license")
+	t.Run("allows JIT provisioning to be enabled on any license", func(t *testing.T) {
+		for name, lic := range map[string]*fleet.LicenseInfo{
+			"default": {},
+			"premium": {Tier: fleet.TierPremium},
+		} {
+			t.Run(name, func(t *testing.T) {
+				invalid := &fleet.InvalidArgumentError{}
+				validateSSOSettings(config, &fleet.AppConfig{}, invalid, lic, false)
+				require.False(t, invalid.HasErrors())
+			})
+		}
 	})
 
-	t.Run("allows JIT provisioning to be enabled with a premium license", func(t *testing.T) {
-		invalid := &fleet.InvalidArgumentError{}
-		validateSSOSettings(config, &fleet.AppConfig{}, invalid, &fleet.LicenseInfo{Tier: fleet.TierPremium}, false)
-		require.False(t, invalid.HasErrors())
-	})
-
-	t.Run("doesn't care if JIT provisioning is set to false on free licenses", func(t *testing.T) {
+	t.Run("doesn't care if JIT provisioning is set to false", func(t *testing.T) {
 		invalid := &fleet.InvalidArgumentError{}
 		oldConfig := &fleet.AppConfig{
 			SSOSettings: &fleet.SSOSettings{

@@ -776,14 +776,159 @@ func (svc *Service) InitSSOCallback(
 
 func (svc *Service) GetSSOUser(ctx context.Context, auth fleet.Auth) (*fleet.User, error) {
 	user, err := svc.ds.UserByEmail(ctx, auth.UserID())
-	if err != nil {
-		var nfe endpointer.NotFoundErrorInterface
-		if errors.As(err, &nfe) {
-			return nil, ctxerr.Wrap(ctx, newSSOError(err, ssoAccountInvalid))
-		}
+	if err == nil {
+		return svc.syncSSOUserRoles(ctx, user, auth)
+	}
+
+	var nfe endpointer.NotFoundErrorInterface
+	if !errors.As(err, &nfe) {
 		return nil, ctxerr.Wrap(ctx, err, "find user in sso callback")
 	}
+
+	jitEnabled, jitErr := svc.jitProvisioningEnabled(ctx)
+	if jitErr != nil {
+		return nil, jitErr
+	}
+	if !jitEnabled {
+		return nil, ctxerr.Wrap(ctx, newSSOError(err, ssoAccountInvalid))
+	}
+	return svc.provisionSSOUser(ctx, auth)
+}
+
+func (svc *Service) jitProvisioningEnabled(ctx context.Context) (bool, error) {
+	config, err := svc.ds.AppConfig(ctx)
+	if err != nil {
+		return false, ctxerr.Wrap(ctx, err, "get app config for sso provisioning")
+	}
+	return config.SSOSettings != nil && config.SSOSettings.EnableJITProvisioning, nil
+}
+
+// provisionSSOUser creates a Fleet account for an IdP user on their first
+// login. Roles come from the assertion's FLEET_JIT_USER_ROLE_* attributes; an
+// assertion carrying none gets the global observer role, so the account exists
+// but cannot change anything until an admin grants it more.
+func (svc *Service) provisionSSOUser(ctx context.Context, auth fleet.Auth) (*fleet.User, error) {
+	// skipauth: the verified SSO assertion is the authorization here — there is
+	// no viewer yet, since this is the user's first login.
+	svc.authz.SkipAuthorization(ctx)
+
+	roles, _, err := fleet.RolesFromSSOAttributes(auth.AssertionAttributes())
+	if err != nil {
+		return nil, ctxerr.Wrap(ctx, newSSOError(err, ssoAccountInvalid), "parse sso role attributes")
+	}
+
+	email := auth.UserID()
+	name := auth.UserDisplayName()
+	if name == "" {
+		name = email
+	}
+
+	payload := fleet.UserPayload{
+		Name:       &name,
+		Email:      &email,
+		SSOEnabled: new(true),
+	}
+	applySSORoles(&payload, roles)
+
+	user, err := svc.NewUser(ctx, payload)
+	if err != nil {
+		return nil, ctxerr.Wrap(ctx, err, "create user from sso assertion")
+	}
 	return user, nil
+}
+
+// syncSSOUserRoles keeps an existing SSO user's roles in step with the
+// assertion. An assertion that carries no role attributes leaves the user's
+// roles alone, so a partial IdP configuration cannot silently demote anyone.
+func (svc *Service) syncSSOUserRoles(ctx context.Context, user *fleet.User, auth fleet.Auth) (*fleet.User, error) {
+	if !user.SSOEnabled {
+		return user, nil
+	}
+
+	jitEnabled, err := svc.jitProvisioningEnabled(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !jitEnabled {
+		return user, nil
+	}
+
+	roles, _, err := fleet.RolesFromSSOAttributes(auth.AssertionAttributes())
+	if err != nil {
+		return nil, ctxerr.Wrap(ctx, newSSOError(err, ssoAccountInvalid), "parse sso role attributes")
+	}
+	if !roles.IsSet() {
+		return user, nil
+	}
+
+	var payload fleet.UserPayload
+	applySSORoles(&payload, roles)
+	if sameSSORoles(user, payload) {
+		return user, nil
+	}
+
+	user.GlobalRole = payload.GlobalRole
+	if payload.Teams != nil {
+		user.Teams = *payload.Teams
+	} else {
+		user.Teams = nil
+	}
+
+	if err := svc.ds.SaveUser(ctx, user); err != nil {
+		return nil, ctxerr.Wrap(ctx, err, "update user roles from sso assertion")
+	}
+	return user, nil
+}
+
+// applySSORoles translates parsed assertion roles into a user payload. The two
+// forms are mutually exclusive — SSORolesInfo.verify rejects assertions that
+// set both — so a payload gets either a global role or fleet memberships.
+func applySSORoles(payload *fleet.UserPayload, roles fleet.SSORolesInfo) {
+	if roles.Global != nil {
+		payload.GlobalRole = roles.Global
+		return
+	}
+	if len(roles.Teams) == 0 {
+		payload.GlobalRole = new(fleet.RoleObserver)
+		return
+	}
+
+	teams := make([]fleet.UserTeam, 0, len(roles.Teams))
+	for _, team := range roles.Teams {
+		teams = append(teams, fleet.UserTeam{
+			Team: fleet.Team{ID: team.ID},
+			Role: team.Role,
+		})
+	}
+	payload.Teams = &teams
+}
+
+func sameSSORoles(user *fleet.User, payload fleet.UserPayload) bool {
+	if (user.GlobalRole == nil) != (payload.GlobalRole == nil) {
+		return false
+	}
+	if user.GlobalRole != nil && *user.GlobalRole != *payload.GlobalRole {
+		return false
+	}
+
+	var wanted []fleet.UserTeam
+	if payload.Teams != nil {
+		wanted = *payload.Teams
+	}
+	if len(user.Teams) != len(wanted) {
+		return false
+	}
+
+	current := make(map[uint]string, len(user.Teams))
+	for _, team := range user.Teams {
+		current[team.ID] = team.Role
+	}
+	for _, team := range wanted {
+		if role, ok := current[team.Team.ID]; !ok || role != team.Role {
+			return false
+		}
+	}
+	return true
 }
 
 func (svc *Service) LoginSSOUser(ctx context.Context, user *fleet.User, redirectURL string) (*fleet.SSOSession, error) {
