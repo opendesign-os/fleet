@@ -656,12 +656,6 @@ var teamRoles = map[string]struct{}{
 	RoleGitOps:       {},
 }
 
-var premiumTeamRoles = map[string]struct{}{
-	RoleTechnician:   {},
-	RoleObserverPlus: {},
-	RoleGitOps:       {},
-}
-
 // ValidTeamRole returns whether the role provided is valid for a team user.
 func ValidTeamRole(role string) bool {
 	_, ok := teamRoles[role]
@@ -672,12 +666,6 @@ var globalRoles = map[string]struct{}{
 	RoleObserver:     {},
 	RoleMaintainer:   {},
 	RoleAdmin:        {},
-	RoleTechnician:   {},
-	RoleObserverPlus: {},
-	RoleGitOps:       {},
-}
-
-var premiumGlobalRoles = map[string]struct{}{
 	RoleTechnician:   {},
 	RoleObserverPlus: {},
 	RoleGitOps:       {},
@@ -713,22 +701,6 @@ func ValidateRole(globalRole *string, teamUsers []UserTeam) error {
 	}
 
 	return nil
-}
-
-// PremiumRolesPresent returns true if the provided globalRole or any
-// role in teamRoles is a premium role.
-func PremiumRolesPresent(globalRole *string, teamRoles []UserTeam) bool {
-	if globalRole != nil {
-		if _, ok := premiumGlobalRoles[*globalRole]; ok {
-			return true
-		}
-	}
-	for _, teamRole := range teamRoles {
-		if _, ok := premiumTeamRoles[teamRole.Role]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 // ValidateUserRoles verifies the roles to be applied to a new or existing user.

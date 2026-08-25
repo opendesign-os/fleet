@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 
 import { IInputFieldParseTarget } from "interfaces/form_field";
+import { hasPremiumLicense } from "utilities/permissions/permissions";
 
 import SettingsSection from "pages/admin/components/SettingsSection";
 import PageDescription from "components/PageDescription";
@@ -20,7 +21,6 @@ interface IStatisticsFormData {
 const Statistics = ({
   appConfig,
   handleSubmit,
-  isPremiumTier,
   isUpdatingSettings,
 }: IAppConfigFormProps): JSX.Element => {
   const [formData, setFormData] = useState<IStatisticsFormData>({
@@ -50,7 +50,7 @@ const Statistics = ({
   };
 
   const telemetryAlwaysEnabled =
-    isPremiumTier && !appConfig.license.allow_disable_telemetry;
+    hasPremiumLicense(appConfig) && !appConfig.license.allow_disable_telemetry;
 
   return (
     <SettingsSection title="Usage statistics">

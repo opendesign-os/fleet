@@ -719,39 +719,32 @@ func (s *integrationTestSuite) TestActivityUserEmailPersistsAfterDeletion() {
 	s.token = s.getTestAdminToken()
 }
 
-func (s *integrationTestSuite) TestPremiumOnlyRoles() {
+func (s *integrationTestSuite) TestRolesServedByCore() {
 	t := s.T()
 
 	for _, role := range []string{fleet.RoleTechnician, fleet.RoleGitOps, fleet.RoleObserverPlus} {
 		t.Run(role, func(t *testing.T) {
-			t.Run("login", func(t *testing.T) {
-				user := &fleet.User{
-					Name:       role,
-					Email:      fmt.Sprintf("%s@example.com", role),
-					GlobalRole: ptr.String(role),
-				}
-				err := user.SetPassword(test.GoodPassword, 10, 10)
-				require.NoError(t, err)
-				_, err = s.ds.NewUser(t.Context(), user)
-				require.NoError(t, err)
+			email := fmt.Sprintf("%s@example.com", role)
+			// The GitOps role is only valid on API-only users.
+			apiOnly := role == fleet.RoleGitOps
 
-				var loginResp fleet.LoginResponse
-				s.DoJSON("POST", "/api/latest/fleet/login", fleet.LoginRequest{
-					Email:    fmt.Sprintf("%s@example.com", role),
-					Password: test.GoodPassword,
-				}, http.StatusPaymentRequired, &loginResp)
-			})
+			var createResp createUserResponse
+			s.DoJSON("POST", "/api/latest/fleet/users/admin", fleet.UserPayload{
+				Name:       new(role),
+				Email:      new(email),
+				Password:   new(test.GoodPassword),
+				GlobalRole: new(role),
+				APIOnly:    new(apiOnly),
+			}, http.StatusOK, &createResp)
+			require.NotNil(t, createResp.User)
+			require.Equal(t, role, *createResp.User.GlobalRole)
 
-			t.Run("create", func(t *testing.T) {
-				var createResp createUserResponse
-				params := fleet.UserPayload{
-					Name:       ptr.String(role),
-					Email:      ptr.String(fmt.Sprintf("%s@example.com", role)),
-					Password:   ptr.String(test.GoodPassword),
-					GlobalRole: ptr.String(role),
-				}
-				s.DoJSON("POST", "/api/latest/fleet/users/admin", params, http.StatusPaymentRequired, &createResp)
-			})
+			var loginResp fleet.LoginResponse
+			s.DoJSON("POST", "/api/latest/fleet/login", fleet.LoginRequest{
+				Email:    email,
+				Password: test.GoodPassword,
+			}, http.StatusOK, &loginResp)
+			require.Equal(t, role, *loginResp.User.GlobalRole)
 		})
 	}
 }

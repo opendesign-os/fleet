@@ -266,7 +266,7 @@ func (s *integrationSSOTestSuite) TestSSOLogin() {
 	})
 }
 
-func (s *integrationSSOTestSuite) TestSSOLoginDisallowedWithPremiumRoles() {
+func (s *integrationSSOTestSuite) TestSSOLoginWithFleetScopedRoles() {
 	t := s.T()
 
 	acResp := appConfigResponse{}
@@ -295,30 +295,27 @@ func (s *integrationSSOTestSuite) TestSSOLoginDisallowedWithPremiumRoles() {
 		require.NoError(t, err)
 	}
 
-	t.Run("global premium roles", func(t *testing.T) {
-		for _, role := range []string{fleet.RoleTechnician, fleet.RoleGitOps, fleet.RoleObserverPlus} {
-			// Create user.
+	for _, role := range []string{fleet.RoleTechnician, fleet.RoleGitOps, fleet.RoleObserverPlus} {
+		t.Run(role, func(t *testing.T) {
 			u := &fleet.User{
 				Name:       "SSO User 2",
 				Email:      "sso_user2@example.com",
-				GlobalRole: ptr.String(role),
+				GlobalRole: new(role),
 				SSOEnabled: true,
 				Password:   []byte{},
 			}
 			u, err := s.ds.NewUser(t.Context(), u)
 			require.NoError(t, err)
 
-			// Attempt to log in.
-			res := s.loginSSOUser("sso_user2", "user123#", "/api/v1/fleet/sso", http.StatusPaymentRequired)
+			res := s.loginSSOUser("sso_user2", "user123#", "/api/v1/fleet/sso", http.StatusOK)
 			t.Cleanup(func() {
 				res.Body.Close()
 			})
 
-			// Cleanup user.
 			err = s.ds.DeleteUser(t.Context(), u.ID)
 			require.NoError(t, err)
-		}
-	})
+		})
+	}
 }
 
 func (s *integrationSSOTestSuite) TestPerformRequiredPasswordResetWithSSO() {
