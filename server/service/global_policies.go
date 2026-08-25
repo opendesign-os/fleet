@@ -15,7 +15,6 @@ import (
 	"github.com/fleetdm/fleet/v4/pkg/fleethttp"
 	"github.com/fleetdm/fleet/v4/server/authz"
 	"github.com/fleetdm/fleet/v4/server/contexts/ctxerr"
-	"github.com/fleetdm/fleet/v4/server/contexts/license"
 	"github.com/fleetdm/fleet/v4/server/contexts/viewer"
 	"github.com/fleetdm/fleet/v4/server/fleet"
 	"github.com/fleetdm/fleet/v4/server/ptr"
@@ -70,10 +69,6 @@ func (svc Service) NewGlobalPolicy(ctx context.Context, p fleet.PolicyPayload) (
 		if err := svc.authz.Authorize(ctx, query, fleet.ActionRead); err != nil {
 			return nil, err
 		}
-	}
-
-	if (len(p.LabelsIncludeAll) > 0 || len(p.LabelsExcludeAll) > 0 || len(p.LabelsIncludeAny) > 0 || len(p.LabelsExcludeAny) > 0) && !license.IsPremium(ctx) {
-		return nil, fleet.ErrMissingLicense
 	}
 
 	if err := verifyLabelsToAssociate(ctx, svc.ds, nil, slices.Concat(p.LabelsIncludeAny, p.LabelsIncludeAll, p.LabelsExcludeAny, p.LabelsExcludeAll), vc.User); err != nil {
@@ -498,24 +493,6 @@ func (svc *Service) ApplyPolicySpecs(ctx context.Context, policies []*fleet.Poli
 			})
 		}
 
-		if (len(policy.LabelsIncludeAll) > 0 || len(policy.LabelsExcludeAll) > 0 || len(policy.LabelsIncludeAny) > 0 || len(policy.LabelsExcludeAny) > 0) && !license.IsPremium(ctx) {
-			return fleet.ErrMissingLicense
-		}
-
-		// ContinuousAutomationsEnabled is premium-only.
-		if policy.ContinuousAutomationsEnabled && !license.IsPremium(ctx) {
-			return fleet.ErrMissingLicense
-		}
-
-		// PatchWhenClosed is premium-only.
-		if policy.PatchWhenClosed && !license.IsPremium(ctx) {
-			return fleet.ErrMissingLicense
-		}
-
-		if policy.ProfileUUID != nil && !license.IsPremium(ctx) {
-			return fleet.ErrMissingLicense
-		}
-
 		// Make sure any applied labels exist.
 		labels := slices.Concat(policy.LabelsIncludeAny, policy.LabelsIncludeAll, policy.LabelsExcludeAny, policy.LabelsExcludeAll)
 		if len(labels) > 0 {
@@ -544,12 +521,6 @@ func (svc *Service) ApplyPolicySpecs(ctx context.Context, policies []*fleet.Poli
 		return ctxerr.Wrap(ctx, &fleet.BadRequestError{
 			Message: "duplicate policy names not allowed",
 		})
-	}
-
-	if !license.IsPremium(ctx) {
-		for i := range policies {
-			policies[i].Critical = false
-		}
 	}
 
 	if err := svc.ds.ApplyPolicySpecs(ctx, vc.UserID(), policies); err != nil {

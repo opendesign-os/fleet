@@ -29,7 +29,7 @@ func TestValidateUserRoles(t *testing.T) {
 		checkErr func(err error) bool
 	}{
 		{
-			name:   "global-gitops-create-not-premium",
+			name:   "global-gitops-create-api-only",
 			create: true,
 			payload: UserPayload{
 				GlobalRole: ptr.String(RoleGitOps),
@@ -37,9 +37,6 @@ func TestValidateUserRoles(t *testing.T) {
 			},
 			license: LicenseInfo{
 				Tier: TierFree,
-			},
-			checkErr: func(err error) bool {
-				return err == ErrMissingLicense
 			},
 		},
 		{

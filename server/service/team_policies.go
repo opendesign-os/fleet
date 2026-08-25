@@ -11,7 +11,6 @@ import (
 
 	"github.com/fleetdm/fleet/v4/server/authz"
 	"github.com/fleetdm/fleet/v4/server/contexts/ctxerr"
-	"github.com/fleetdm/fleet/v4/server/contexts/license"
 	"github.com/fleetdm/fleet/v4/server/contexts/logging"
 	"github.com/fleetdm/fleet/v4/server/contexts/viewer"
 	"github.com/fleetdm/fleet/v4/server/fleet"
@@ -88,14 +87,6 @@ func (svc Service) NewTeamPolicy(ctx context.Context, teamID uint, tp fleet.NewT
 		}
 	}
 
-	if (len(tp.LabelsIncludeAll) > 0 || len(tp.LabelsExcludeAll) > 0 || len(tp.LabelsIncludeAny) > 0 || len(tp.LabelsExcludeAny) > 0) && !license.IsPremium(ctx) {
-		return nil, fleet.ErrMissingLicense
-	}
-
-	if tp.ProfileUUID != nil && !license.IsPremium(ctx) {
-		return nil, fleet.ErrMissingLicense
-	}
-
 	if err := verifyLabelsToAssociate(ctx, svc.ds, &teamID, slices.Concat(tp.LabelsIncludeAny, tp.LabelsIncludeAll, tp.LabelsExcludeAny, tp.LabelsExcludeAll), vc.User); err != nil {
 		return nil, ctxerr.Wrap(ctx, err, "verify labels to associate")
 	}
@@ -138,13 +129,11 @@ func (svc Service) NewTeamPolicy(ctx context.Context, teamID uint, tp fleet.NewT
 
 	var teamName *string
 	if teamID != 0 {
-		if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.TeamByIDOrName != nil {
-			team, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, &teamID, nil)
-			if err != nil {
-				return nil, ctxerr.Wrap(ctx, err, "fetching team details")
-			}
-			teamName = &team.Name
+		team, err := svc.resolveTeam(ctx, &teamID, nil)
+		if err != nil {
+			return nil, ctxerr.Wrap(ctx, err, "fetching fleet details")
 		}
+		teamName = &team.Name
 	}
 
 	teamIDPtr := int64(teamID)
@@ -623,13 +612,11 @@ func (svc Service) DeleteTeamPolicies(ctx context.Context, teamID uint, ids []ui
 
 	var teamName *string
 	if teamID != 0 {
-		if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.TeamByIDOrName != nil {
-			team, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, &teamID, nil)
-			if err != nil {
-				return nil, ctxerr.Wrap(ctx, err, "fetching team details")
-			}
-			teamName = &team.Name
+		team, err := svc.resolveTeam(ctx, &teamID, nil)
+		if err != nil {
+			return nil, ctxerr.Wrap(ctx, err, "fetching fleet details")
 		}
+		teamName = &team.Name
 	}
 
 	for _, id := range deletedIDs {
@@ -719,14 +706,6 @@ func (svc *Service) modifyPolicy(ctx context.Context, teamID *uint, id uint, p f
 		return nil, ctxerr.Wrap(ctx, &fleet.BadRequestError{
 			Message: fmt.Sprintf("policy payload verification: %s", err),
 		})
-	}
-
-	if (len(p.LabelsIncludeAll) > 0 || len(p.LabelsExcludeAll) > 0 || len(p.LabelsIncludeAny) > 0 || len(p.LabelsExcludeAny) > 0) && !license.IsPremium(ctx) {
-		return nil, fleet.ErrMissingLicense
-	}
-
-	if p.ProfileUUID.Valid && p.ProfileUUID.Value != "" && !license.IsPremium(ctx) {
-		return nil, fleet.ErrMissingLicense
 	}
 
 	if err := verifyLabelsToAssociate(ctx, svc.ds, teamID, slices.Concat(p.LabelsIncludeAny, p.LabelsIncludeAll, p.LabelsExcludeAny, p.LabelsExcludeAll), authz.UserFromContext(ctx)); err != nil {

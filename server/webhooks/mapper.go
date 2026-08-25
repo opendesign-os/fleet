@@ -26,10 +26,10 @@ type hostPayloadPart struct {
 type WebhookPayload struct {
 	CVE              string     `json:"cve"`
 	Link             string     `json:"details_link"`
-	EPSSProbability  *float64   `json:"epss_probability,omitempty"`   // Premium feature only
-	CVSSScore        *float64   `json:"cvss_score,omitempty"`         // Premium feature only
-	CISAKnownExploit *bool      `json:"cisa_known_exploit,omitempty"` // Premium feature only
-	CVEPublished     *time.Time `json:"cve_published,omitempty"`      // Premium feature only
+	EPSSProbability  *float64   `json:"epss_probability,omitempty"`
+	CVSSScore        *float64   `json:"cvss_score,omitempty"`
+	CISAKnownExploit *bool      `json:"cisa_known_exploit,omitempty"`
+	CVEPublished     *time.Time `json:"cve_published,omitempty"`
 
 	Hosts []*hostPayloadPart `json:"hosts_affected"`
 }
@@ -75,8 +75,12 @@ func (m *Mapper) GetPayload(
 	meta fleet.CVEMeta,
 ) WebhookPayload {
 	return WebhookPayload{
-		CVE:   cve,
-		Link:  fmt.Sprintf("https://nvd.nist.gov/vuln/detail/%s", cve),
-		Hosts: m.getHostPayloadPart(hostBaseURL, hosts),
+		CVE:              cve,
+		Link:             fmt.Sprintf("https://nvd.nist.gov/vuln/detail/%s", cve),
+		EPSSProbability:  meta.EPSSProbability,
+		CVSSScore:        meta.CVSSScore,
+		CISAKnownExploit: meta.CISAKnownExploit,
+		CVEPublished:     meta.Published,
+		Hosts:            m.getHostPayloadPart(hostBaseURL, hosts),
 	}
 }

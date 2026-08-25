@@ -737,26 +737,14 @@ func ValidateUserRoles(createNew bool, payload UserPayload, license LicenseInfo)
 	if err := ValidateRole(payload.GlobalRole, teamUsers_); err != nil {
 		return err
 	}
-	premiumRolesPresent := false
 	gitOpsRolePresent := false
-	if payload.GlobalRole != nil {
-		if *payload.GlobalRole == RoleGitOps {
-			gitOpsRolePresent = true
-		}
-		if _, ok := premiumGlobalRoles[*payload.GlobalRole]; ok {
-			premiumRolesPresent = true
-		}
+	if payload.GlobalRole != nil && *payload.GlobalRole == RoleGitOps {
+		gitOpsRolePresent = true
 	}
 	for _, teamUser := range teamUsers_ {
 		if teamUser.Role == RoleGitOps {
 			gitOpsRolePresent = true
 		}
-		if _, ok := premiumTeamRoles[teamUser.Role]; ok {
-			premiumRolesPresent = true
-		}
-	}
-	if !license.IsPremium() && premiumRolesPresent {
-		return ErrMissingLicense
 	}
 	if gitOpsRolePresent &&
 		// New user is not API only.

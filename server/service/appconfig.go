@@ -2945,15 +2945,10 @@ func encodePEMCertificate(buf io.Writer, cert *x509.Certificate) error {
 }
 
 func (svc *Service) HostFeatures(ctx context.Context, host *fleet.Host) (*fleet.Features, error) {
-	if svc.EnterpriseOverrides != nil {
+	if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.HostFeatures != nil {
 		return svc.EnterpriseOverrides.HostFeatures(ctx, host)
 	}
-
-	appConfig, err := svc.ds.AppConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &appConfig.Features, nil
+	return svc.hostFeatures(ctx, host)
 }
 
 // validateAddress validates that the provided address is usable for Fleet operations.

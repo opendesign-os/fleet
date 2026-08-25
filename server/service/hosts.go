@@ -901,7 +901,7 @@ func (r getHostResponse) Error() error { return r.Err }
 func getHostEndpoint(ctx context.Context, request interface{}, svc fleet.Service) (fleet.Errorer, error) {
 	req := request.(*getHostRequest)
 	opts := fleet.HostDetailOptions{
-		IncludeCVEScores: false,
+		IncludeCVEScores: true,
 		IncludePolicies:  true, // intentionally true to preserve existing behavior,
 		ExcludeSoftware:  req.ExcludeSoftware,
 	}
@@ -1105,7 +1105,7 @@ func (r hostIDOnlyResponse) Error() error { return r.Err }
 func hostByIdentifierEndpoint(ctx context.Context, request interface{}, svc fleet.Service) (fleet.Errorer, error) {
 	req := request.(*hostByIdentifierRequest)
 	opts := fleet.HostDetailOptions{
-		IncludeCVEScores: false,
+		IncludeCVEScores: true,
 		IncludePolicies:  true, // intentionally true to preserve existing behavior
 		ExcludeSoftware:  req.ExcludeSoftware,
 	}

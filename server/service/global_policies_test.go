@@ -519,28 +519,7 @@ func TestApplyPolicySpecsLabelsValidation(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestApplyPolicySpecsLabelScopeRequiresPremium(t *testing.T) {
-	ds := new(mock.Store)
-	ds.AppConfigFunc = func(ctx context.Context) (*fleet.AppConfig, error) {
-		return &fleet.AppConfig{}, nil
-	}
-	ds.ApplyPolicySpecsFunc = func(ctx context.Context, authorID uint, specs []*fleet.PolicySpec) error {
-		return nil
-	}
-	ds.LabelsByNameFunc = func(ctx context.Context, names []string, filter fleet.TeamFilter) (map[string]*fleet.Label, error) {
-		return map[string]*fleet.Label{"foo": {Name: "foo", ID: 1}}, nil
-	}
-
-	// Free license.
-	svc, ctx := newTestService(t, ds, nil, nil)
-
-	testAdmin := fleet.User{
-		ID:         1,
-		Teams:      []fleet.UserTeam{},
-		GlobalRole: new(fleet.RoleAdmin),
-	}
-	viewerCtx := viewer.NewContext(ctx, viewer.Viewer{User: &testAdmin})
-
+func TestApplyPolicySpecsLabelScope(t *testing.T) {
 	for name, spec := range map[string]*fleet.PolicySpec{
 		"labels_include_any": {Name: "p", Query: "SELECT 1", LabelsIncludeAny: []string{"foo"}},
 		"labels_include_all": {Name: "p", Query: "SELECT 1", LabelsIncludeAll: []string{"foo"}},
@@ -548,14 +527,33 @@ func TestApplyPolicySpecsLabelScopeRequiresPremium(t *testing.T) {
 		"labels_exclude_all": {Name: "p", Query: "SELECT 1", LabelsExcludeAll: []string{"foo"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			err := svc.ApplyPolicySpecs(viewerCtx, []*fleet.PolicySpec{spec})
-			require.ErrorIs(t, err, fleet.ErrMissingLicense)
+			ds := new(mock.Store)
+			ds.AppConfigFunc = func(ctx context.Context) (*fleet.AppConfig, error) {
+				return &fleet.AppConfig{}, nil
+			}
+			ds.ApplyPolicySpecsFunc = func(ctx context.Context, authorID uint, specs []*fleet.PolicySpec) error {
+				return nil
+			}
+			ds.LabelsByNameFunc = func(ctx context.Context, names []string, filter fleet.TeamFilter) (map[string]*fleet.Label, error) {
+				return map[string]*fleet.Label{"foo": {Name: "foo", ID: 1}}, nil
+			}
+
+			svc, ctx := newTestService(t, ds, nil, nil)
+
+			testAdmin := fleet.User{
+				ID:         1,
+				Teams:      []fleet.UserTeam{},
+				GlobalRole: new(fleet.RoleAdmin),
+			}
+			viewerCtx := viewer.NewContext(ctx, viewer.Viewer{User: &testAdmin})
+
+			require.NoError(t, svc.ApplyPolicySpecs(viewerCtx, []*fleet.PolicySpec{spec}))
+			require.True(t, ds.ApplyPolicySpecsFuncInvoked)
 		})
 	}
-	require.False(t, ds.ApplyPolicySpecsFuncInvoked)
 }
 
-func TestApplyPolicySpecsPatchWhenClosedRequiresPremium(t *testing.T) {
+func TestApplyPolicySpecsPatchWhenClosed(t *testing.T) {
 	newDS := func() *mock.Store {
 		ds := new(mock.Store)
 		ds.AppConfigFunc = func(ctx context.Context) (*fleet.AppConfig, error) {
@@ -582,25 +580,19 @@ func TestApplyPolicySpecsPatchWhenClosedRequiresPremium(t *testing.T) {
 
 	testAdmin := fleet.User{ID: 1, GlobalRole: new(fleet.RoleAdmin)}
 
-	// A free-tier caller can't apply patch_when_closed, and we never reach the datastore.
-	t.Run("free tier rejected", func(t *testing.T) {
-		ds := newDS()
-		svc, ctx := newTestService(t, ds, nil, nil)
-		viewerCtx := viewer.NewContext(ctx, viewer.Viewer{User: &testAdmin})
-		err := svc.ApplyPolicySpecs(viewerCtx, []*fleet.PolicySpec{patchSpec()})
-		require.ErrorIs(t, err, fleet.ErrMissingLicense)
-		require.False(t, ds.ApplyPolicySpecsFuncInvoked)
-	})
-
-	// A premium caller applies it successfully.
-	t.Run("premium accepted", func(t *testing.T) {
-		ds := newDS()
-		svc, ctx := newTestService(t, ds, nil, nil, &TestServerOpts{License: &fleet.LicenseInfo{Tier: fleet.TierPremium}})
-		viewerCtx := viewer.NewContext(ctx, viewer.Viewer{User: &testAdmin})
-		err := svc.ApplyPolicySpecs(viewerCtx, []*fleet.PolicySpec{patchSpec()})
-		require.NoError(t, err)
-		require.True(t, ds.ApplyPolicySpecsFuncInvoked)
-	})
+	for name, opts := range map[string][]*TestServerOpts{
+		"default license": nil,
+		"premium license": {{License: &fleet.LicenseInfo{Tier: fleet.TierPremium}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ds := newDS()
+			svc, ctx := newTestService(t, ds, nil, nil, opts...)
+			viewerCtx := viewer.NewContext(ctx, viewer.Viewer{User: &testAdmin})
+			err := svc.ApplyPolicySpecs(viewerCtx, []*fleet.PolicySpec{patchSpec()})
+			require.NoError(t, err)
+			require.True(t, ds.ApplyPolicySpecsFuncInvoked)
+		})
+	}
 }
 
 func TestApplyPolicySpecsDefaultType(t *testing.T) {
@@ -970,23 +962,18 @@ func TestApplyPolicySpecsResendConfigProfile(t *testing.T) {
 		require.False(t, ds.ApplyPolicySpecsFuncInvoked)
 	})
 
-	// PolicySpec has no premium struct tag and the decoder does not reach into the
-	// spec slice, so ApplyPolicySpecs needs its own explicit license check.
-	t.Run("profile_uuid requires premium", func(t *testing.T) {
+	t.Run("profile_uuid on a fleet policy is applied", func(t *testing.T) {
 		ds := setupDS()
 		ds.ApplyPolicySpecsFunc = func(ctx context.Context, authorID uint, specs []*fleet.PolicySpec) error {
 			return nil
 		}
-		// Free license.
 		svc, ctx := newTestService(t, ds, nil, nil)
 
-		err := svc.ApplyPolicySpecs(adminCtx(ctx), []*fleet.PolicySpec{spec(teamName, new(appleUUID))})
-		require.ErrorIs(t, err, fleet.ErrMissingLicense)
-		require.False(t, ds.ApplyPolicySpecsFuncInvoked)
+		require.NoError(t, svc.ApplyPolicySpecs(adminCtx(ctx), []*fleet.PolicySpec{spec(teamName, new(appleUUID))}))
+		require.True(t, ds.ApplyPolicySpecsFuncInvoked)
 	})
 
-	// Without a profile UUID, a free-tier spec is unaffected.
-	t.Run("no profile_uuid does not require premium", func(t *testing.T) {
+	t.Run("spec without profile_uuid is applied", func(t *testing.T) {
 		ds := setupDS()
 		ds.ApplyPolicySpecsFunc = func(ctx context.Context, authorID uint, specs []*fleet.PolicySpec) error {
 			return nil

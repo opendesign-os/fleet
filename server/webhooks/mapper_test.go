@@ -29,12 +29,20 @@ func TestGetPaylaod(t *testing.T) {
 
 	sut := Mapper{}
 
-	t.Run("does not include EE features", func(t *testing.T) {
+	t.Run("includes vulnerability scores", func(t *testing.T) {
 		result := sut.GetPayload(serverURL, nil, vuln.CVE, meta)
-		require.Empty(t, result.CISAKnownExploit)
-		require.Empty(t, result.EPSSProbability)
-		require.Empty(t, result.CVSSScore)
-		require.Empty(t, result.CVEPublished)
+		require.Equal(t, meta.CISAKnownExploit, result.CISAKnownExploit)
+		require.Equal(t, meta.EPSSProbability, result.EPSSProbability)
+		require.Equal(t, meta.CVSSScore, result.CVSSScore)
+		require.Equal(t, meta.Published, result.CVEPublished)
+	})
+
+	t.Run("omits scores when the CVE has no metadata", func(t *testing.T) {
+		result := sut.GetPayload(serverURL, nil, vuln.CVE, fleet.CVEMeta{CVE: "cve-1"})
+		require.Nil(t, result.CISAKnownExploit)
+		require.Nil(t, result.EPSSProbability)
+		require.Nil(t, result.CVSSScore)
+		require.Nil(t, result.CVEPublished)
 	})
 
 	t.Run("host payload only includes valid software paths", func(t *testing.T) {

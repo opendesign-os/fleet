@@ -1394,6 +1394,9 @@ func TestHostDetailQueriesTeamBitLockerPIN(t *testing.T) {
 	ds.TeamMDMConfigFunc = func(ctx context.Context, teamID uint) (*fleet.TeamMDM, error) {
 		return &teamMDMConfig, nil
 	}
+	ds.TeamFeaturesFunc = func(ctx context.Context, teamID uint) (*fleet.Features, error) {
+		return &fleet.Features{}, nil
+	}
 
 	host := fleet.Host{
 		ID:               1,
@@ -1500,66 +1503,41 @@ func TestQueriesAndHostFeatures(t *testing.T) {
 	lq.On("QueriesForHost", uint(2)).Return(map[string]string{}, nil)
 	lq.On("QueriesForHost", nil).Return(map[string]string{}, nil)
 
-	t.Run("free license", func(t *testing.T) {
-		license := &fleet.LicenseInfo{Tier: fleet.TierFree}
-		svc, ctx := newTestService(t, ds, nil, lq, &TestServerOpts{License: license})
+	// Per-fleet features drive the host's detail queries on every license tier.
+	for name, license := range map[string]*fleet.LicenseInfo{
+		"free license":    {Tier: fleet.TierFree},
+		"premium license": {Tier: fleet.TierPremium},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, ctx := newTestService(t, ds, nil, lq, &TestServerOpts{License: license})
 
-		ctx = hostctx.NewContext(ctx, &host)
-		queries, _, _, err := svc.GetDistributedQueries(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, queries, "fleet_detail_query_users")
-		require.NotContains(t, queries, "fleet_detail_query_software_macos")
-		require.NotContains(t, queries, "fleet_detail_query_software_linux")
-		require.NotContains(t, queries, "fleet_detail_query_software_windows")
+			// No fleet: the global config applies, and it has both features off.
+			host.TeamID = nil
+			ctx = hostctx.NewContext(ctx, &host)
+			queries, _, _, err := svc.GetDistributedQueries(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, queries, "fleet_detail_query_users")
+			require.NotContains(t, queries, "fleet_detail_query_software_macos")
+			require.NotContains(t, queries, "fleet_detail_query_software_linux")
+			require.NotContains(t, queries, "fleet_detail_query_software_windows")
 
-		// assign team 1 to host
-		host.TeamID = &team1.ID
-		queries, _, _, err = svc.GetDistributedQueries(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, queries, "fleet_detail_query_users")
-		require.NotContains(t, queries, "fleet_detail_query_software_macos")
-		require.NotContains(t, queries, "fleet_detail_query_software_linux")
-		require.NotContains(t, queries, "fleet_detail_query_software_windows")
+			// Fleet 1 enables host users only.
+			host.TeamID = &team1.ID
+			queries, _, _, err = svc.GetDistributedQueries(ctx)
+			require.NoError(t, err)
+			require.Contains(t, queries, "fleet_detail_query_users")
+			require.NotContains(t, queries, "fleet_detail_query_software_macos")
+			require.NotContains(t, queries, "fleet_detail_query_software_linux")
+			require.NotContains(t, queries, "fleet_detail_query_software_windows")
 
-		// assign team 2 to host
-		host.TeamID = &team2.ID
-		queries, _, _, err = svc.GetDistributedQueries(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, queries, "fleet_detail_query_users")
-		require.NotContains(t, queries, "fleet_detail_query_software_macos")
-		require.NotContains(t, queries, "fleet_detail_query_software_linux")
-		require.NotContains(t, queries, "fleet_detail_query_software_windows")
-	})
-
-	t.Run("premium license", func(t *testing.T) {
-		license := &fleet.LicenseInfo{Tier: fleet.TierPremium}
-		svc, ctx := newTestService(t, ds, nil, lq, &TestServerOpts{License: license})
-
-		host.TeamID = nil
-		ctx = hostctx.NewContext(ctx, &host)
-		queries, _, _, err := svc.GetDistributedQueries(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, queries, "fleet_detail_query_users")
-		require.NotContains(t, queries, "fleet_detail_query_software_macos")
-		require.NotContains(t, queries, "fleet_detail_query_software_linux")
-		require.NotContains(t, queries, "fleet_detail_query_software_windows")
-
-		// assign team 1 to host
-		host.TeamID = &team1.ID
-		queries, _, _, err = svc.GetDistributedQueries(ctx)
-		require.NoError(t, err)
-		require.Contains(t, queries, "fleet_detail_query_users")
-		require.NotContains(t, queries, "fleet_detail_query_software_macos")
-		require.NotContains(t, queries, "fleet_detail_query_software_linux")
-		require.NotContains(t, queries, "fleet_detail_query_software_windows")
-
-		// assign team 2 to host
-		host.TeamID = &team2.ID
-		queries, _, _, err = svc.GetDistributedQueries(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, queries, "fleet_detail_query_users")
-		require.Contains(t, queries, "fleet_detail_query_software_macos")
-	})
+			// Fleet 2 enables software inventory only.
+			host.TeamID = &team2.ID
+			queries, _, _, err = svc.GetDistributedQueries(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, queries, "fleet_detail_query_users")
+			require.Contains(t, queries, "fleet_detail_query_software_macos")
+		})
+	}
 }
 
 func TestGetDistributedQueriesMissingHost(t *testing.T) {

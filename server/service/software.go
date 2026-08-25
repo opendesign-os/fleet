@@ -105,14 +105,9 @@ func (svc *Service) ListSoftware(ctx context.Context, opt fleet.SoftwareListOpti
 		return nil, nil, err
 	}
 
-	// Vulnerability filters are only available in premium (opt.IncludeCVEScores is only true in premium)
-	lic, err := svc.License(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	if !lic.IsPremium() && (opt.MaximumCVSS > 0 || opt.MinimumCVSS > 0 || opt.KnownExploit) {
-		return nil, nil, fleet.ErrMissingLicense
-	}
+	// Scores drive the CVSS/known-exploit filters and ordering, so they must be
+	// joined in even when the caller only filters on them.
+	opt.IncludeCVEScores = true
 
 	// default sort order to hosts_count descending
 	if opt.ListOptions.OrderKey == "" {
@@ -260,20 +255,8 @@ func (svc Service) CountSoftware(ctx context.Context, opt fleet.SoftwareListOpti
 		return 0, err
 	}
 
-	lic, err := svc.License(ctx)
-	if err != nil {
-		return 0, ctxerr.Wrap(ctx, err, "get license")
-	}
-
-	// Vulnerability filters are only available in premium
-	if !lic.IsPremium() && (opt.MaximumCVSS > 0 || opt.MinimumCVSS > 0 || opt.KnownExploit) {
-		return 0, fleet.ErrMissingLicense
-	}
-
 	// required for vulnerability filters
-	if lic.IsPremium() {
-		opt.IncludeCVEScores = true
-	}
+	opt.IncludeCVEScores = true
 
 	return svc.ds.CountSoftware(ctx, opt)
 }

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	eeservice "github.com/fleetdm/fleet/v4/ee/server/service"
-	eewebhooks "github.com/fleetdm/fleet/v4/ee/server/webhooks"
 	"github.com/fleetdm/fleet/v4/server"
 	activity_api "github.com/fleetdm/fleet/v4/server/activity/api"
 	chart_api "github.com/fleetdm/fleet/v4/server/chart/api"
@@ -282,19 +281,12 @@ func scanVulnerabilities(
 	vulns = append(vulns, govalDictVulns...)
 	vulns = append(vulns, customVulns...)
 
-	var recentV []fleet.SoftwareVulnerability
-	var matchingMeta map[string]fleet.CVEMeta
-	if license.IsPremium(ctx) {
-		meta, err := ds.ListCVEs(automationCtx, config.RecentVulnerabilityMaxAge)
-		if err != nil {
-			errHandler(automationCtx, logger, "could not fetch CVE meta", err)
-			return nil
-		}
-		recentV, matchingMeta = utils.RecentVulns(vulns, meta)
-	} else {
-		recentV = vulns
-		matchingMeta = make(map[string]fleet.CVEMeta)
+	meta, err := ds.ListCVEs(automationCtx, config.RecentVulnerabilityMaxAge)
+	if err != nil {
+		errHandler(automationCtx, logger, "could not fetch CVE meta", err)
+		return nil
 	}
+	recentV, matchingMeta := utils.RecentVulns(vulns, meta)
 
 	automationSpan.SetAttributes(attribute.Int("recent_vulns", len(recentV)))
 
@@ -308,9 +300,6 @@ func scanVulnerabilities(
 				Time:           time.Now(),
 			}
 			mapper := webhooks.NewMapper()
-			if license.IsPremium(automationCtx) {
-				mapper = eewebhooks.NewMapper()
-			}
 			// send recent vulnerabilities via webhook
 			if err := webhooks.TriggerVulnerabilitiesWebhook(
 				automationCtx,
