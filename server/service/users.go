@@ -141,17 +141,7 @@ func (svc *Service) CreateUser(ctx context.Context, p fleet.UserPayload) (*fleet
 
 	// Do not allow creating a user with any Premium-only features on Fleet Free.
 	if !license.IsPremium(ctx) {
-		var teamRoles []fleet.UserTeam
-		if p.Teams != nil {
-			teamRoles = *p.Teams
-		}
-		if fleet.PremiumRolesPresent(p.GlobalRole, teamRoles) {
-			return nil, nil, fleet.ErrMissingLicense
-		}
 		if p.APIOnly != nil && *p.APIOnly && p.APIEndpoints != nil && *p.APIEndpoints != nil {
-			return nil, nil, fleet.ErrMissingLicense
-		}
-		if p.APIOnly != nil && *p.APIOnly && len(teamRoles) > 0 {
 			return nil, nil, fleet.ErrMissingLicense
 		}
 	}
@@ -722,17 +712,7 @@ func (svc *Service) ModifyUser(ctx context.Context, userID uint, p fleet.UserPay
 
 	// Do not allow setting any Premium-only features on Fleet Free.
 	if !license.IsPremium(ctx) {
-		var teamRoles []fleet.UserTeam
-		if p.Teams != nil {
-			teamRoles = *p.Teams
-		}
-		if fleet.PremiumRolesPresent(p.GlobalRole, teamRoles) {
-			return nil, fleet.ErrMissingLicense
-		}
 		if user.APIOnly && p.APIEndpoints != nil && *p.APIEndpoints != nil {
-			return nil, fleet.ErrMissingLicense
-		}
-		if p.APIOnly != nil && *p.APIOnly && len(teamRoles) > 0 {
 			return nil, fleet.ErrMissingLicense
 		}
 	}
@@ -1655,9 +1635,21 @@ func (svc *Service) RequestPasswordReset(ctx context.Context, email string) erro
 }
 
 func (svc *Service) ListAvailableTeamsForUser(ctx context.Context, user *fleet.User) ([]*fleet.TeamSummary, error) {
-	// skipauth: No authorization check needed due to implementation returning
-	// only license error.
-	svc.authz.SkipAuthorization(ctx)
+	if err := svc.authz.Authorize(ctx, &fleet.Team{}, fleet.ActionRead); err != nil {
+		return nil, err
+	}
 
-	return nil, fleet.ErrMissingLicense
+	if user.GlobalRole != nil {
+		teams, err := svc.ds.TeamsSummary(ctx)
+		if err != nil {
+			return nil, ctxerr.Wrap(ctx, err, "list fleets summary")
+		}
+		return teams, nil
+	}
+
+	teams := make([]*fleet.TeamSummary, 0, len(user.Teams))
+	for _, t := range user.Teams {
+		teams = append(teams, &fleet.TeamSummary{ID: t.ID, Name: t.Name, Description: t.Description})
+	}
+	return teams, nil
 }

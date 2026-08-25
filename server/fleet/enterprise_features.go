@@ -10,7 +10,8 @@ package fleet
 // experience — are deliberately absent.
 type EnterpriseFeatures struct {
 	// Fleets is host grouping with fleet-scoped roles: fleet CRUD, membership,
-	// enroll secrets, agent options and GitOps specs.
+	// enroll secrets, agent options and GitOps specs. Covers the observer+,
+	// technician and GitOps roles, globally and per fleet.
 	Fleets bool `json:"fleets"`
 	// VulnerabilityScores is CVSS, EPSS and CISA known-exploit data on hosts,
 	// software and vulnerability webhooks.

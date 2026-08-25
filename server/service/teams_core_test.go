@@ -410,3 +410,27 @@ func TestHostFeaturesComeFromTheHostsFleet(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, features.EnableHostUsers)
 }
+
+func TestListAvailableTeamsForUser(t *testing.T) {
+	ds := teamsTestStore()
+	ds.TeamsSummaryFunc = func(ctx context.Context) ([]*fleet.TeamSummary, error) {
+		return []*fleet.TeamSummary{{ID: 1, Name: "fleet1"}, {ID: 2, Name: "fleet2"}}, nil
+	}
+	svc, ctx := newTestService(t, ds, nil, nil)
+
+	globalAdmin := &fleet.User{ID: 1, GlobalRole: new(fleet.RoleAdmin)}
+	teams, err := svc.ListAvailableTeamsForUser(viewer.NewContext(ctx, viewer.Viewer{User: globalAdmin}), globalAdmin)
+	require.NoError(t, err)
+	require.Len(t, teams, 2)
+	require.True(t, ds.TeamsSummaryFuncInvoked)
+
+	ds.TeamsSummaryFuncInvoked = false
+	teamMember := &fleet.User{ID: 2, Teams: []fleet.UserTeam{
+		{Team: fleet.Team{ID: 2, Name: "fleet2"}, Role: fleet.RoleObserver},
+	}}
+	teams, err = svc.ListAvailableTeamsForUser(viewer.NewContext(ctx, viewer.Viewer{User: teamMember}), teamMember)
+	require.NoError(t, err)
+	require.Len(t, teams, 1)
+	require.Equal(t, uint(2), teams[0].ID)
+	require.False(t, ds.TeamsSummaryFuncInvoked)
+}
