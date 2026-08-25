@@ -443,7 +443,7 @@ func (svc *Service) parseAndValidateAppleConfigProfile(ctx context.Context, team
 		if lic == nil || !lic.IsPremium() {
 			return nil, nil, "", ctxerr.Wrap(ctx, fleet.ErrMissingLicense)
 		}
-		tm, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, &teamID, nil)
+		tm, err := svc.resolveTeam(ctx, &teamID, nil)
 		if err != nil {
 			return nil, nil, "", ctxerr.Wrap(ctx, err)
 		}
@@ -1115,7 +1115,7 @@ func (svc *Service) parseAndValidateAppleDeclaration(ctx context.Context, teamID
 		if lic == nil || !lic.IsPremium() {
 			return nil, nil, "", ctxerr.Wrap(ctx, fleet.ErrMissingLicense)
 		}
-		tm, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, &teamID, nil)
+		tm, err := svc.resolveTeam(ctx, &teamID, nil)
 		if err != nil {
 			return nil, nil, "", ctxerr.Wrap(ctx, err)
 		}

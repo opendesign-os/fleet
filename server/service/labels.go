@@ -397,10 +397,6 @@ func (svc *Service) ListLabels(ctx context.Context, opt fleet.ListOptions, teamI
 		return nil, fleet.ErrNoContext
 	}
 
-	if !license.IsPremium(ctx) && teamID != nil && *teamID > 0 {
-		return nil, fleet.ErrMissingLicense
-	}
-
 	// TODO(mna): ListLabels doesn't currently return the hostIDs members of the
 	// label, the quick approach would be an N+1 queries endpoint. Leaving like
 	// that for now because we're in a hurry before merge freeze but the solution
@@ -450,10 +446,6 @@ func (svc *Service) LabelsSummary(ctx context.Context, teamID *uint) ([]*fleet.L
 	vc, ok := viewer.FromContext(ctx)
 	if !ok {
 		return nil, fleet.ErrNoContext
-	}
-
-	if !license.IsPremium(ctx) && teamID != nil && *teamID > 0 {
-		return nil, fleet.ErrMissingLicense
 	}
 
 	return svc.ds.LabelsSummary(ctx, fleet.TeamFilter{User: vc.User, IncludeObserver: true, TeamID: teamID})
@@ -680,10 +672,6 @@ func (svc *Service) ApplyLabelSpecs(ctx context.Context, specs []*fleet.LabelSpe
 	if !ok || user.User == nil {
 		return fleet.ErrNoContext
 	}
-	if !license.IsPremium(ctx) && teamID != nil && *teamID > 0 {
-		return fleet.ErrMissingLicense
-	}
-
 	regularSpecs := make([]*fleet.LabelSpec, 0, len(specs))
 	var builtInSpecs []*fleet.LabelSpec
 	var builtInSpecNames []string
@@ -967,10 +955,6 @@ func getLabelSpecsEndpoint(ctx context.Context, request interface{}, svc fleet.S
 func (svc *Service) GetLabelSpecs(ctx context.Context, teamID *uint) ([]*fleet.LabelSpec, error) {
 	if err := svc.authz.Authorize(ctx, &fleet.Label{TeamID: teamID}, fleet.ActionRead); err != nil {
 		return nil, err
-	}
-
-	if !license.IsPremium(ctx) && teamID != nil && *teamID > 0 {
-		return nil, fleet.ErrMissingLicense
 	}
 
 	vc, ok := viewer.FromContext(ctx)

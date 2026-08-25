@@ -551,13 +551,12 @@ func (svc *Service) DeleteQuery(ctx context.Context, teamID *uint, name string) 
 	var teamName *string
 	if query.TeamID != nil {
 		logTeamID = int64(*query.TeamID) //nolint:gosec // dismiss G115
-		if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.TeamByIDOrName != nil {
-			team, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, query.TeamID, nil)
+			team, err := svc.resolveTeam(ctx, query.TeamID, nil)
 			if err != nil {
 				return err
 			}
 			teamName = &team.Name
-		}
+
 	} else {
 		logTeamID = -1
 		teamName = nil
@@ -626,13 +625,12 @@ func (svc *Service) deleteLoadedQuery(ctx context.Context, query *fleet.Query) e
 	var teamName *string
 	if query.TeamID != nil {
 		logTeamID = int64(*query.TeamID) //nolint:gosec // dismiss G115
-		if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.TeamByIDOrName != nil {
-			team, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, query.TeamID, nil)
+			team, err := svc.resolveTeam(ctx, query.TeamID, nil)
 			if err != nil {
 				return err
 			}
 			teamName = &team.Name
-		}
+
 	} else {
 		logTeamID = -1
 		teamName = nil
@@ -683,13 +681,12 @@ func (svc *Service) DeleteQueries(ctx context.Context, ids []uint) (uint, error)
 		// Capture team information for activity logging.
 		if query.TeamID != nil {
 			logTeamID = int64(*query.TeamID) //nolint:gosec // dismiss G115
-			if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.TeamByIDOrName != nil {
-				team, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, query.TeamID, nil)
+				team, err := svc.resolveTeam(ctx, query.TeamID, nil)
 				if err != nil {
 					return 0, err
 				}
 				teamName = &team.Name
-			}
+
 		}
 	}
 

@@ -3277,8 +3277,7 @@ func (c *Client) doGitOpsNoTeamWebhookSettings(
 	logFn func(format string, args ...interface{}),
 	dryRun bool,
 ) error {
-	// Check if premium license is available for No Team webhook settings
-	if !config.IsNoTeam() || appCfg == nil || appCfg.License == nil || !appCfg.License.IsPremium() {
+	if !config.IsNoTeam() {
 		return nil
 	}
 

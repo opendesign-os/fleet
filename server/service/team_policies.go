@@ -903,13 +903,11 @@ func (svc *Service) modifyPolicy(ctx context.Context, teamID *uint, id uint, p f
 
 	var teamName *string
 	if *teamID != 0 {
-		if svc.EnterpriseOverrides != nil && svc.EnterpriseOverrides.TeamByIDOrName != nil {
-			team, err := svc.EnterpriseOverrides.TeamByIDOrName(ctx, teamID, nil)
-			if err != nil {
-				return nil, ctxerr.Wrap(ctx, err, "fetching team details")
-			}
-			teamName = &team.Name
+		team, err := svc.resolveTeam(ctx, teamID, nil)
+		if err != nil {
+			return nil, ctxerr.Wrap(ctx, err, "fetching fleet details")
 		}
+		teamName = &team.Name
 	}
 
 	// Convert *uint to *int64 for the activity
