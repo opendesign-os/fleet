@@ -61,6 +61,10 @@ type appConfigResponseFields struct {
 	Partnerships   *fleet.Partnerships `json:"partnerships,omitempty"`
 	// Maximum software package size is loaded from the service.
 	MaxSoftwarePackageSize int64 `json:"max_software_package_size"`
+	// EnterpriseFeatures reports the enterprise features this build serves from the
+	// open-source core, independently of the license tier. The UI reads it to
+	// decide which enterprise surfaces to show.
+	EnterpriseFeatures fleet.EnterpriseFeatures `json:"enterprise_features"`
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface to make sure we serialize
@@ -240,6 +244,7 @@ func getAppConfigEndpoint(ctx context.Context, request interface{}, svc fleet.Se
 			SandboxEnabled:         svc.SandboxEnabled(),
 			Partnerships:           partnerships,
 			MaxSoftwarePackageSize: svc.MaxInstallerSizeBytes(),
+			EnterpriseFeatures:     fleet.CoreEnterpriseFeatures(),
 		},
 	}
 	return response, nil
@@ -355,6 +360,7 @@ func modifyAppConfigEndpoint(ctx context.Context, request interface{}, svc fleet
 			License:                lic,
 			Logging:                loggingConfig,
 			MaxSoftwarePackageSize: svc.MaxInstallerSizeBytes(),
+			EnterpriseFeatures:     fleet.CoreEnterpriseFeatures(),
 		},
 	}
 

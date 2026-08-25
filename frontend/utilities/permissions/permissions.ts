@@ -5,12 +5,22 @@ export const isSandboxMode = (config: IConfig): boolean => {
   return !!config.sandbox_enabled; // TODO: confirm null/undefined config should treated as false based on final API spec
 };
 
-export const isFreeTier = (config: IConfig): boolean => {
-  return config.license.tier === "free";
+/** This build implements the enterprise feature set in the open-source core, so
+ * enterprise UI is available whenever the server reports those features — not
+ * only under a Fleet Premium license. Surfaces that are still license-gated
+ * (per-fleet MDM settings, Apple Business Manager, volume purchasing,
+ * disk-encryption escrow, setup experience) carry their own gates on top of
+ * this one, mostly on whether MDM is enabled and configured. */
+const hasEnterpriseFeatures = (config: IConfig): boolean => {
+  return Boolean(config.enterprise_features?.fleets);
 };
 
 export const isPremiumTier = (config: IConfig): boolean => {
-  return config.license.tier === "premium";
+  return config.license.tier === "premium" || hasEnterpriseFeatures(config);
+};
+
+export const isFreeTier = (config: IConfig): boolean => {
+  return !isPremiumTier(config);
 };
 
 export const isMacMdmEnabledAndConfigured = (config: IConfig): boolean => {
