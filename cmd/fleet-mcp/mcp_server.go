@@ -28,9 +28,13 @@ CRITICAL WORKFLOW for any tool that takes a 'sql' argument (run_live_query):
 
 Schema freshness: the in-memory schema is refreshed periodically from https://raw.githubusercontent.com/fleetdm/fleet/main/schema/osquery_fleet_schema.json (the JSON behind https://fleetdm.com/tables). If you suspect a schema mismatch — e.g. fleet docs show a column the response is missing — call refresh_osquery_schema and try again.
 
-Team (Fleet) scoping: when the user names a team in the conversation (e.g. "Workstations", "Servers"), pass it as the 'fleet' argument to run_live_query to restrict the targeted hosts to that team. Only omit 'fleet' when the user explicitly wants all teams.
+Team (Fleet) scoping: when the user names a team in the conversation (e.g. "Workstations", "Servers"), pass it as the 'fleet' argument to restrict the call to that team. Every tool that can be scoped takes 'fleet' — get_endpoints, get_total_system_count, get_aggregate_platforms, get_software, get_queries, get_policies, get_policy_compliance, get_policy_hosts, get_vulnerability_hosts, get_scripts, create_script, create_query, run_script, run_script_batch, prepare_live_query and run_live_query. Call get_fleets first to get exact names. Only omit 'fleet' when the user explicitly wants all teams.
 
-CONFIRM BEFORE RUNNING run_live_query: show the operator the exact SQL and the resolved target scope (the host_ids / label / 'fleet', or "all hosts" if unscoped), then wait for explicit confirmation. Never auto-approve.
+Saved reports and scripts belong to exactly one fleet, and Fleet has no route for moving either between fleets — update_query and update_script change the definition in place, so a fleet change means delete plus re-create. Running a saved script on a host requires the two to be in the same fleet.
+
+CONFIRM BEFORE ANY WRITE: run_live_query, create_query, update_query, delete_query, create_script, update_script, delete_script, run_script and run_script_batch all change state. Show the operator what will change — for run_live_query the exact SQL plus the resolved target scope (the host_ids / label / 'fleet', or "all hosts" if unscoped); for a write the target fleet, the object's name, and the full new SQL or script body; for a delete the name and fleet of what is about to disappear — then wait for explicit confirmation. Never auto-approve.
+
+SCRIPT EXECUTION is the sharpest edge here: run_script and run_script_batch execute code on managed devices with the agent's privileges, and there is no undo. Requirements, not suggestions: (1) always show the operator the FULL script body first — get_script(contents='true') for a saved script — never just its name; (2) for run_script resolve the host with get_host and show the operator the resolved hostname, never act on a partial name; (3) for run_script_batch preview the exact host set with prepare_live_query using the same filters and show the operator that count before queueing; (4) get explicit confirmation of body and target together, and re-confirm if either changes. create_script and create_query by contrast only store a definition and run nothing.
 
 Skipping step 1 produces queries that parse and run but return wrong or empty results. Always verify before emitting SQL.`
 
@@ -52,6 +56,7 @@ func SetupMCPServer(config *Config, fleetClient *FleetClient) *server.MCPServer 
 	registerQueryTools(s, fleetClient)
 	registerPolicyTools(s, fleetClient)
 	registerInventoryTools(s, fleetClient)
+	registerScriptTools(s, fleetClient)
 
 	return s
 }

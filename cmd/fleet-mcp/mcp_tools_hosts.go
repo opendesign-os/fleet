@@ -161,14 +161,31 @@ func registerGetHost(s *server.MCPServer, fleetClient *FleetClient) {
 
 func registerGetTotalSystemCount(s *server.MCPServer, fleetClient *FleetClient) {
 	tool := mcp.NewTool("get_total_system_count",
-		mcp.WithDescription("Get the total count of active systems enrolled in Fleet"),
+		mcp.WithDescription("Get the count of active systems enrolled in Fleet. Pass `fleet` to count one fleet's hosts instead of the whole inventory; the other filters compose the same way they do in get_endpoints. Prefer this over paginating get_endpoints when you only need a number."),
+		mcp.WithString("fleet", mcp.Description("Optional fleet name (e.g. 'Workstations'). Omit to count every enrolled host.")),
+		mcp.WithString("platform", mcp.Description("Optional platform filter (e.g. 'macos', 'windows', 'linux').")),
+		mcp.WithString("status", mcp.Description("Optional host status filter ('online', 'offline', 'new', 'mia').")),
+		mcp.WithString("query", mcp.Description("Optional substring matched against hostname / serial / IP / model / user inventory.")),
+		mcp.WithString("label", mcp.Description("Optional Fleet label name. Use get_labels to discover names.")),
+		mcp.WithString("policy_id", mcp.Description("Optional numeric policy ID. Combine with policy_response.")),
+		mcp.WithString("policy_response", mcp.Description("Optional 'passing' or 'failing'. Requires policy_id.")),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
 		mcp.WithIdempotentHintAnnotation(true),
 	)
 	s.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		logrus.Info("Tool invoked: get_total_system_count")
-		count, err := fleetClient.GetHostCount(ctx)
+
+		count, err := fleetClient.GetHostCountWithFilters(
+			ctx,
+			getOptionalString(request, "fleet"),
+			getOptionalString(request, "platform"),
+			getOptionalString(request, "status"),
+			getOptionalString(request, "query"),
+			getOptionalString(request, "label"),
+			getOptionalString(request, "policy_id"),
+			getOptionalString(request, "policy_response"),
+		)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Failed to get total count: %v", err)), nil
 		}
@@ -178,14 +195,21 @@ func registerGetTotalSystemCount(s *server.MCPServer, fleetClient *FleetClient) 
 
 func registerGetAggregatePlatforms(s *server.MCPServer, fleetClient *FleetClient) {
 	tool := mcp.NewTool("get_aggregate_platforms",
-		mcp.WithDescription("Get the count of systems aggregated by platform (macOS, Windows, Linux)"),
+		mcp.WithDescription("Get host counts broken down by platform (macOS, Windows, Linux, ChromeOS, iOS, iPadOS, Android, Other) plus the total. This is the OS mix of the inventory — the numbers behind the platform breakdown on Fleet's dashboard. Counted server-side over the whole inventory, so it stays correct on large Fleets where paginating get_endpoints would not. Pass `fleet` for one fleet's mix instead of the whole inventory. Use get_total_system_count when you only need one number, and get_endpoints when you need the hosts themselves."),
+		mcp.WithString("fleet", mcp.Description("Optional fleet name (e.g. 'Workstations'). Omit for the whole inventory.")),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
 		mcp.WithIdempotentHintAnnotation(true),
 	)
 	s.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		logrus.Info("Tool invoked: get_aggregate_platforms")
-		aggregate, err := fleetClient.GetEndpointsWithAggregations(ctx)
+
+		teamID, err := fleetClient.resolveFleetID(ctx, getOptionalString(request, "fleet"))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		aggregate, err := fleetClient.GetEndpointsWithAggregations(ctx, teamID)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Failed to get aggregate platforms: %v", err)), nil
 		}

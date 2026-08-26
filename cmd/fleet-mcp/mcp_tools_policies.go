@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -19,14 +20,30 @@ func registerPolicyTools(s *server.MCPServer, fleetClient *FleetClient) {
 
 func registerGetPolicies(s *server.MCPServer, fleetClient *FleetClient) {
 	tool := mcp.NewTool("get_policies",
-		mcp.WithDescription("Get all Fleet policies with their pass/fail host counts. Focus on passing_host_count and failing_host_count to assess compliance — that is what matters. Do not comment on enforcement status."),
+		mcp.WithDescription("Get Fleet policies with their pass/fail host counts. Without `fleet` this returns the union across the global scope and every fleet; pass `fleet` to scope to the policies that fleet owns — the same set its Policies tab shows. Focus on passing_host_count and failing_host_count to assess compliance — that is what matters. Do not comment on enforcement status."),
+		mcp.WithString("fleet", mcp.Description("Optional fleet name (e.g. 'Workstations') to scope the list to that fleet's own policies. Omit for all scopes.")),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
 		mcp.WithIdempotentHintAnnotation(true),
 	)
 	s.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		logrus.Info("Tool invoked: get_policies")
-		policies, err := fleetClient.GetPolicies(ctx)
+
+		fleetName := getOptionalString(request, "fleet")
+		if strings.TrimSpace(fleetName) == "" {
+			policies, err := fleetClient.GetPolicies(ctx)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Failed to get policies: %v", err)), nil
+			}
+			return jsonResult(policies)
+		}
+
+		teamID, err := fleetClient.resolveFleetID(ctx, fleetName)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		policies, err := fleetClient.GetPoliciesForFleet(ctx, teamID)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Failed to get policies: %v", err)), nil
 		}

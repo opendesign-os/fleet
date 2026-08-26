@@ -17,22 +17,153 @@ func registerQueryTools(s *server.MCPServer, fleetClient *FleetClient) {
 	registerRunLiveQuery(s, fleetClient)
 	registerGetOsquerySchema(s)
 	registerRefreshOsquerySchema(s)
+	registerCreateQuery(s, fleetClient)
+	registerUpdateQuery(s, fleetClient)
+	registerDeleteQuery(s, fleetClient)
 }
 
 func registerGetQueries(s *server.MCPServer, fleetClient *FleetClient) {
 	tool := mcp.NewTool("get_queries",
-		mcp.WithDescription("Get a list of all saved queries in Fleet"),
+		mcp.WithDescription("List saved reports (formerly 'queries'). Without `fleet` this returns the union across the Unassigned scope and every fleet. Pass `fleet` to scope to one fleet — that is the same set the fleet's Reports tab shows, and it is what you want before creating or editing a report so you don't collide with an existing name. Discover fleet names with get_fleets."),
+		mcp.WithString("fleet", mcp.Description("Optional fleet name (e.g. 'Workstations') to scope the list to that fleet. Omit for all scopes.")),
+		mcp.WithString("platform", mcp.Description("Optional platform filter: 'macos' / 'windows' / 'linux' / 'chromeos'. Returns only reports targeted at that platform.")),
+		mcp.WithString("merge_inherited", mcp.Description("'true' to also include the Unassigned-scope reports the fleet inherits. Requires `fleet`.")),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
 		mcp.WithIdempotentHintAnnotation(true),
 	)
 	s.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		logrus.Info("Tool invoked: get_queries")
-		queries, err := fleetClient.GetQueries(ctx)
+
+		fleetName := getOptionalString(request, "fleet")
+		platform := getOptionalString(request, "platform")
+		mergeInherited := strings.EqualFold(strings.TrimSpace(getOptionalString(request, "merge_inherited")), "true")
+
+		if strings.TrimSpace(fleetName) == "" && platform == "" {
+			queries, err := fleetClient.GetQueries(ctx)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Failed to get reports: %v", err)), nil
+			}
+			return jsonResult(queries)
+		}
+
+		teamID, err := fleetClient.resolveFleetID(ctx, fleetName)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to get queries: %v", err)), nil
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		queries, err := fleetClient.GetQueriesForFleet(ctx, teamID, platform, mergeInherited)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to get reports: %v", err)), nil
 		}
 		return jsonResult(queries)
+	})
+}
+
+func registerCreateQuery(s *server.MCPServer, fleetClient *FleetClient) {
+	tool := mcp.NewTool("create_query",
+		mcp.WithDescription("Save a new report (formerly 'query') to a fleet. Omit `fleet` to save it at the Unassigned scope, where every fleet inherits it. This stores the SQL for scheduled collection — it does not run it now; use run_live_query for that.\n\nFollow the same schema-first workflow as run_live_query: call get_osquery_schema first and verify column names and types, then CONFIRM the fleet, name, and exact SQL with the operator before calling."),
+		mcp.WithString("name", mcp.Required(), mcp.Description("Report name. Must be unique within the target scope — check get_queries(fleet=...) first.")),
+		mcp.WithString("sql", mcp.Required(), mcp.Description("The osquery SQL statement to save.")),
+		mcp.WithString("fleet", mcp.Description("Fleet name to save the report under. Omit for the Unassigned scope.")),
+		mcp.WithString("description", mcp.Description("Optional description.")),
+		mcp.WithString("platform", mcp.Description("Optional platform targeting: 'macos' / 'windows' / 'linux' / 'chromeos'. Omit to target every platform.")),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(false),
+	)
+	s.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		logrus.Info("Tool invoked: create_query")
+
+		name := strings.TrimSpace(getOptionalString(request, "name"))
+		if name == "" {
+			return mcp.NewToolResultError("name is required"), nil
+		}
+		sql := getOptionalString(request, "sql")
+		if strings.TrimSpace(sql) == "" {
+			return mcp.NewToolResultError("sql is required"), nil
+		}
+
+		teamID, err := fleetClient.resolveFleetID(ctx, getOptionalString(request, "fleet"))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		query, err := fleetClient.CreateSavedQuery(ctx, name, getOptionalString(request, "description"), sql, normalizePlatform(getOptionalString(request, "platform")), teamID)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to create report: %v", err)), nil
+		}
+		return jsonResult(query)
+	})
+}
+
+func registerUpdateQuery(s *server.MCPServer, fleetClient *FleetClient) {
+	tool := mcp.NewTool("update_query",
+		mcp.WithDescription("Update a saved report in place. Only the fields you pass change; the rest keep their stored values. The report keeps its fleet — Fleet has no route for moving a report between fleets, so delete and re-create for that. Read the current definition with get_queries first and CONFIRM the change with the operator before calling."),
+		mcp.WithString("query_id", mcp.Required(), mcp.Description("Numeric report ID (from get_queries).")),
+		mcp.WithString("name", mcp.Description("New name.")),
+		mcp.WithString("sql", mcp.Description("New osquery SQL. Verify against get_osquery_schema before changing it.")),
+		mcp.WithString("description", mcp.Description("New description.")),
+		mcp.WithString("platform", mcp.Description("New platform targeting: 'macos' / 'windows' / 'linux' / 'chromeos', or 'all' to clear it.")),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(true),
+		mcp.WithIdempotentHintAnnotation(true),
+	)
+	s.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		logrus.Info("Tool invoked: update_query")
+
+		queryID, err := parsePositiveUintString("query_id", getOptionalString(request, "query_id"))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		var payload UpdateQueryRequest
+		if v := strings.TrimSpace(getOptionalString(request, "name")); v != "" {
+			payload.Name = &v
+		}
+		if v := getOptionalString(request, "sql"); strings.TrimSpace(v) != "" {
+			payload.Query = &v
+		}
+		if v := getOptionalString(request, "description"); v != "" {
+			payload.Description = &v
+		}
+		if v := getOptionalString(request, "platform"); strings.TrimSpace(v) != "" {
+			normalized := normalizePlatform(v)
+			payload.Platform = &normalized
+		}
+
+		if payload.Name == nil && payload.Query == nil && payload.Description == nil && payload.Platform == nil {
+			return mcp.NewToolResultError("nothing to update — pass at least one of name / sql / description / platform"), nil
+		}
+
+		query, err := fleetClient.UpdateSavedQuery(ctx, uint(queryID), payload)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to update report: %v", err)), nil
+		}
+		return jsonResult(query)
+	})
+}
+
+func registerDeleteQuery(s *server.MCPServer, fleetClient *FleetClient) {
+	tool := mcp.NewTool("delete_query",
+		mcp.WithDescription("Delete a saved report by ID. Irreversible, and it discards the report's collected data along with the definition. Show the operator the report's name and fleet (from get_queries) and get explicit confirmation before calling."),
+		mcp.WithString("query_id", mcp.Required(), mcp.Description("Numeric report ID (from get_queries).")),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(true),
+		mcp.WithIdempotentHintAnnotation(false),
+	)
+	s.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		logrus.Info("Tool invoked: delete_query")
+
+		queryID, err := parsePositiveUintString("query_id", getOptionalString(request, "query_id"))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		if err := fleetClient.DeleteSavedQuery(ctx, uint(queryID)); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to delete report: %v", err)), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Deleted report %d.", queryID)), nil
 	})
 }
 

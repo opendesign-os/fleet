@@ -875,13 +875,19 @@ func (fc *FleetClient) GetLabels(ctx context.Context) ([]Label, error) {
 	return result.Labels, nil
 }
 
-// GetEndpointsWithAggregations returns the platform breakdown for the entire
-// Fleet using /api/v1/fleet/host_summary, which Fleet computes server-side
-// over the full inventory. The previous implementation called GetEndpoints(0)
-// which silently truncated to Fleet's default 100-host page — wrong on any
-// Fleet larger than that. host_summary is the correct dedicated endpoint.
-func (fc *FleetClient) GetEndpointsWithAggregations(ctx context.Context) (*AggregateResponse, error) {
-	resp, err := fc.makeFleetRequest(ctx, "GET", "/api/v1/fleet/host_summary", nil)
+// GetEndpointsWithAggregations returns the platform breakdown using
+// /api/v1/fleet/host_summary, which Fleet computes server-side over the full
+// inventory. The previous implementation called GetEndpoints(0) which silently
+// truncated to Fleet's default 100-host page — wrong on any Fleet larger than
+// that. host_summary is the correct dedicated endpoint. A non-nil teamID
+// scopes the breakdown to one fleet.
+func (fc *FleetClient) GetEndpointsWithAggregations(ctx context.Context, teamID *uint) (*AggregateResponse, error) {
+	endpoint := "/api/v1/fleet/host_summary"
+	if teamID != nil {
+		endpoint += "?team_id=" + strconv.FormatUint(uint64(*teamID), 10)
+	}
+
+	resp, err := fc.makeFleetRequest(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get host summary: %w", err)
 	}
